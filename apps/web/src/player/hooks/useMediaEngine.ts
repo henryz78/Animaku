@@ -541,13 +541,22 @@ export function useMediaEngine({
         if (!alive()) return
         if (tryAuthRefresh()) return
 
-        // 针对冷连接闪断 (ERR_CONNECTION_CLOSED / 网络瞬时重置) 自动执行指数退避自愈重试
-        if (
+        const errCode = video.error?.code
+        // 严格排除非网络错误：用户中止(1)、解码失败(3)、格式不支持(4)等终端错误绝对不重试
+        const isTerminalError =
+          errCode === 1 ||
+          errCode === 3 ||
+          errCode === 4
+
+        // 仅在初始加载阶段（未解码出首帧）且属于非终端网络暂态故障时，允许消耗重试预算（最多 2 次静默重试）
+        const canRetryNetwork =
+          !isTerminalError &&
           retryCount < MAX_RETRIES &&
           video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
-        ) {
+
+        if (canRetryNetwork) {
           retryCount++
-          const delay = retryCount === 1 ? 350 : 800
+          const delay = retryCount === 1 ? 300 : 800
           retryTimer = setTimeout(() => {
             if (!alive()) return
             mountAndLoad()
@@ -557,12 +566,10 @@ export function useMediaEngine({
 
         setLoading(false)
         setBufferingUi(false)
-        const reason = video.error?.code
-          ? `video_error_${video.error.code}`
-          : 'video_load_failed'
+        const reason = errCode ? `video_error_${errCode}` : 'video_load_failed'
         setMediaError(
-          video.error?.code
-            ? `视频播放失败 code=${video.error.code}，建议切换视频源`
+          errCode
+            ? `视频播放失败 code=${errCode}，建议切换视频源`
             : '视频加载失败，建议切换视频源',
         )
         reportLoadFailed(reason)
