@@ -419,6 +419,7 @@ export async function startAnime4K(
 
   let stopped = false
   let firstFrameDispatched = false
+  let firstFrameHandshakePending = false
   /** Tab hidden — skip GPU work until visible again */
   let pausedForHidden = false
   const WIDTH = native.width
@@ -554,6 +555,63 @@ export async function startAnime4K(
     }
   }
 
+  void device.lost
+    .then((info) => {
+      if (stopped || info?.reason === 'destroyed') {
+        return
+      }
+
+      console.warn(
+        '[anime4k] WebGPU device lost:',
+        info?.message,
+        info?.reason,
+      )
+
+      stop()
+      options.onError?.('gpu_error')
+    })
+    .catch((err) => {
+      if (stopped) {
+        return
+      }
+
+      console.warn('[anime4k] device.lost error', err)
+
+      stop()
+      options.onError?.('gpu_error')
+    })
+
+  const requestFirstFrameHandshake = () => {
+    if (firstFrameDispatched || firstFrameHandshakePending || stopped) {
+      return
+    }
+
+    firstFrameHandshakePending = true
+
+    void device.queue
+      .onSubmittedWorkDone()
+      .then(() => {
+        firstFrameHandshakePending = false
+
+        if (stopped || firstFrameDispatched) {
+          return
+        }
+
+        notifyFirstFrame()
+      })
+      .catch((err) => {
+        firstFrameHandshakePending = false
+
+        if (stopped) {
+          return
+        }
+
+        console.warn('[anime4k] onSubmittedWorkDone rejected', err)
+        stop()
+        options.onError?.('gpu_error')
+      })
+  }
+
   const frame = () => {
     if (stopped || pausedForHidden) return
     try {
@@ -581,7 +639,7 @@ export async function startAnime4K(
         renderPassInternal()
         consecutiveGpuErrors = 0
         if (!firstFrameDispatched) {
-          notifyFirstFrame()
+          requestFirstFrameHandshake()
         }
       }
     } catch (e) {
@@ -687,9 +745,9 @@ export async function startAnime4K(
     }
     if (initialCopy === 'ready') {
       renderPassInternal()
-      void device.queue.onSubmittedWorkDone().then(() => {
-        if (!stopped) notifyFirstFrame()
-      })
+      if (!firstFrameDispatched) {
+        requestFirstFrameHandshake()
+      }
     }
   } catch (e) {
     console.warn('[anime4k] initial frame render error', e)
