@@ -51,10 +51,11 @@ services:
       DANDAN_APP_ID: ${DANDAN_APP_ID:-}
       DANDAN_APP_SECRET: ${DANDAN_APP_SECRET:-}
 
-      # 客户端 UA 标识覆盖（选填）
+      # 客户端 UA 标识覆盖与版本（选填）
       BANGUMI_USER_AGENT: ${BANGUMI_USER_AGENT:-}
       PRODUCT_USER_AGENT: ${PRODUCT_USER_AGENT:-}
       DEFAULT_USER_AGENT: ${DEFAULT_USER_AGENT:-}
+      APP_VERSION: ${APP_VERSION:-}
 
       # 规则商店与第三方镜像
       PLUGIN_SHOP: ${PLUGIN_SHOP:-}
@@ -67,6 +68,13 @@ services:
       INDEXNOW_ENABLED: ${INDEXNOW_ENABLED:-0}
       INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       ADMIN_SECRET: ${ADMIN_SECRET:-}
+
+      # 视频源出站正向代理池（按需配置）
+      PROXY_1: ${PROXY_1:-}
+      PROXY_2: ${PROXY_2:-}
+      PROXY_CN: ${PROXY_CN:-}
+      SOURCE_PROXY_MAP: ${SOURCE_PROXY_MAP:-}
+      SOURCE_PROXY_CYCANI: ${SOURCE_PROXY_CYCANI:-}
 
     # 自动加载同目录下的 .env 环境变量文件（如存在）
     env_file:

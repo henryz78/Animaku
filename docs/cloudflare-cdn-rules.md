@@ -106,6 +106,18 @@
 - 开启 **Bot 战斗模式 (Bot Fight Mode)**。
 - 自动对公网已知爬虫引擎之外的可疑 Python/cURL/Go 扫描器执行静默挑战。
 
+### 3.6 管理接口边缘速率限制 (Rate Limiting Rules 防密码爆破)
+针对后台管理与鉴权接口（`/api/admin/*`），建议在 Cloudflare 边缘节点配置速率限制，黑客在尝试字典爆破 `ADMIN_SECRET` 时直接在边缘被封禁，零消耗源站性能。
+
+前往 Cloudflare 控制台 -> **安全性 (Security) -> WAF -> 速率限制规则 (Rate Limiting Rules) -> 创建规则**：
+- **规则名称**：`Rate-Limit-Admin-API`
+- **匹配条件**：`URI 路径 包含 /api/admin/`（或 `starts_with(http.request.uri.path, "/api/admin/")`）
+- **速率定义**：
+  - **请求数**：`5`
+  - **周期**：`10 秒`（或 `1 分钟`）
+- **处置动作 (Action)**：`阻止 (Block)`（持续时长建议 `10 分钟`）或 `受托质询 (Managed Challenge)`
+- **效果**：正常管理员操作不受影响；高频密码枚举直接在 CDN 边缘被拦截封禁。
+
 ---
 
 ## 4. CDN 边缘缓存规则 (Cache Rules & Edge TTL)
@@ -153,15 +165,15 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 
 ---
 
-#### 规则 1：媒体代理与写入请求绕过 (Bypass Media & Non-GET)
+#### 规则 1：媒体代理、管理后台与写入请求绕过 (Bypass Media, Admin & Non-GET)
 - **规则名称**：`animaku-bypass-media-and-writes`
 - **匹配表达式 (Expression)**：
   ```text
-  (starts_with(http.request.uri.path, "/api/media/") or http.request.uri.path eq "/api/health" or http.request.method ne "GET")
+  (starts_with(http.request.uri.path, "/api/media/") or starts_with(http.request.uri.path, "/api/admin/") or http.request.uri.path eq "/api/site/config" or http.request.uri.path eq "/api/health" or http.request.method ne "GET")
   ```
 - **缓存设置**：
   - **缓存资格 (Cache Eligibility)**：`绕过缓存 (Bypass cache)`
-  - **目的**：媒体流实时长连接代理与动态鉴权、健康检查及非 GET 请求全部直通源站。
+  - **目的**：媒体流实时长连接代理与动态鉴权、管理控制台 API、动态站点配置、健康检查及非 GET 请求全部直通源站，绝不缓存在边缘 CDN。
 
 #### 规则 2：弹幕与 B 站代理 30 分钟边缘缓存 (Danmaku CDN 30m)
 - **规则名称**：`Animaku danmaku CDN 30m`
@@ -227,6 +239,7 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 
 全系统（服务端 + CDN）已统一接入缓存穿透协议：
 - **主动刷新**：只要请求携带 `?refresh=1`、`?refresh=true` 或请求头 `Cache-Control: no-cache`，服务端 `setDanmakuCdnHeaders`、`setBangumiListCdnHeaders`、`setCommentsCdnHeaders`、`setRecommendationsCdnHeaders` 与 `ttl-cache` 会自动下发 `CDN-Cache-Control: no-store` 与 `Cloudflare-CDN-Cache-Control: no-store`，强制穿透边缘 CDN 并回源拉取最新鲜数据。
+- **网站图标 (Favicon) 缓存穿透**：系统在站长更换图标后，会自动向 HTML 的 `<link rel="icon">` 注入版本指纹参数（如 `/favicon.ico?v=1727500000`），保证访客秒级看到新图标。若因历史缓存滞后，亦可在 Cloudflare 控制台 -> **缓存 -> 配置 -> 自定义清除 (Purge by URL)** 中输入 `https://你的域名/favicon.ico` 立即秒级清除边缘单文件缓存。
 
 ---
 

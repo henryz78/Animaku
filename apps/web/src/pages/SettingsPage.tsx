@@ -18,6 +18,7 @@ import {
 } from '../lib/bangumi-image-host'
 import { useSettingsStore } from '../stores/settings'
 import { isBuiltinPlugin, usePluginStore } from '../stores/plugins'
+import { useSiteConfigStore } from '../stores/site-config'
 import { PageHeader } from '../components/ui'
 import { getSiteBranding } from '../lib/site-branding'
 import { EMPTY_ARRAY, FALLBACK_DANMAKU, FALLBACK_NAV, FALLBACK_PLAYER } from '../lib/stable'
@@ -323,6 +324,7 @@ export function SettingsPage() {
       'player-settings': true,
       'danmaku-settings': false,
       'nav-settings': false,
+      'admin-panel': false,
     }
   })
 
@@ -1366,7 +1368,449 @@ export function SettingsPage() {
           </p>
         </div>
       </CollapsibleSection>
+
+      {/* 站点运维与管理 (Admin) */}
+      <AdminPanelSection
+        isOpen={Boolean(openSections['admin-panel'])}
+        onToggle={() => toggleSection('admin-panel')}
+      />
     </div>
+  )
+}
+
+function AdminPanelSection({
+  isOpen,
+  onToggle,
+}: {
+  isOpen: boolean
+  onToggle: () => void
+}) {
+  const siteName = useSiteConfigStore((s) => s.siteName)
+  const siteTagline = useSiteConfigStore((s) => s.siteTagline)
+  const iconMode = useSiteConfigStore((s) => s.iconMode)
+  const iconUrl = useSiteConfigStore((s) => s.iconUrl)
+  const iconUpdatedAt = useSiteConfigStore((s) => s.iconUpdatedAt)
+  const isAdminUnlocked = useSiteConfigStore((s) => s.isAdminUnlocked)
+  const unlockAdmin = useSiteConfigStore((s) => s.unlockAdmin)
+  const lockAdmin = useSiteConfigStore((s) => s.lockAdmin)
+  const saveConfig = useSiteConfigStore((s) => s.saveConfig)
+  const uploadIcon = useSiteConfigStore((s) => s.uploadIcon)
+  const resetIcon = useSiteConfigStore((s) => s.resetIcon)
+  const resetAllConfig = useSiteConfigStore((s) => s.resetAllConfig)
+  const triggerIndexNow = useSiteConfigStore((s) => s.triggerIndexNow)
+
+  // 认证输入
+  const [secretInput, setSecretInput] = useState('')
+  const [showSecret, setShowSecret] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
+
+  // 站点信息编辑
+  const [nameInput, setNameInput] = useState(siteName)
+  const [taglineInput, setTaglineInput] = useState(siteTagline)
+  const [modeInput, setModeInput] = useState<'upload' | 'url'>('upload')
+  const [urlInput, setUrlInput] = useState(iconUrl)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [filePreview, setFilePreview] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  // IndexNow 运维
+  const [isIndexing, setIsIndexing] = useState(false)
+  const [indexMsg, setIndexMsg] = useState('')
+
+  useEffect(() => {
+    setNameInput(siteName)
+    setTaglineInput(siteTagline)
+    setModeInput(iconMode === 'url' ? 'url' : 'upload')
+    setUrlInput(iconUrl)
+  }, [siteName, siteTagline, iconMode, iconUrl])
+
+  useEffect(() => {
+    return () => {
+      if (filePreview && filePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(filePreview)
+      }
+    }
+  }, [filePreview])
+
+  const handleUnlock = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    setAuthError('')
+    if (!secretInput.trim()) {
+      setAuthError('请输入管理员密钥')
+      return
+    }
+    setIsVerifying(true)
+    const success = await unlockAdmin(secretInput)
+    setIsVerifying(false)
+    if (!success) {
+      setAuthError('密钥错误或鉴权失败（请确认服务端 .env 已设置 ADMIN_SECRET）')
+    } else {
+      setSecretInput('')
+    }
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSaveStatus('文件超过 2MB 大小限制，请重新选择')
+      return
+    }
+
+    const lowerName = file.name.toLowerCase()
+    const allowed = ['.ico', '.png', '.jpg', '.jpeg', '.webp']
+    if (!allowed.some((ext) => lowerName.endsWith(ext))) {
+      setSaveStatus('不支持的文件格式，仅允许 ICO / PNG / JPG / WEBP')
+      return
+    }
+
+    setModeInput('upload')
+    setSelectedFile(file)
+    setSaveStatus('')
+    const url = URL.createObjectURL(file)
+    setFilePreview(url)
+  }
+
+  const handleSaveAll = async () => {
+    setIsSaving(true)
+    setSaveStatus('')
+    try {
+      if (modeInput === 'upload' && selectedFile) {
+        await uploadIcon(selectedFile)
+      }
+
+      await saveConfig({
+        siteName: nameInput,
+        siteTagline: taglineInput,
+        iconMode: modeInput,
+        iconUrl: urlInput,
+      })
+
+      setSaveStatus('✅ 保存成功！站点标题、标语与图标已全站即时生效')
+      setSelectedFile(null)
+      if (filePreview) {
+        URL.revokeObjectURL(filePreview)
+        setFilePreview(null)
+      }
+    } catch (err) {
+      setSaveStatus(`❌ 保存失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleResetIcon = async () => {
+    if (!confirm('确定要恢复官方默认图标吗？自定义上传的图标将被清除。')) return
+    try {
+      await resetIcon()
+      setModeInput('upload')
+      setSelectedFile(null)
+      setFilePreview(null)
+      setSaveStatus('已恢复官方默认图标')
+    } catch (err) {
+      setSaveStatus(`重置失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  const handleResetAll = async () => {
+    if (!confirm('确定要恢复整站官方默认设置吗？自定义的站点名称、标语和上传的图标将被全部清空。')) return
+    setIsSaving(true)
+    setSaveStatus('')
+    try {
+      await resetAllConfig()
+      setNameInput('')
+      setTaglineInput('')
+      setModeInput('upload')
+      setUrlInput('')
+      setSelectedFile(null)
+      if (filePreview) {
+        URL.revokeObjectURL(filePreview)
+        setFilePreview(null)
+      }
+      setSaveStatus('✅ 已成功恢复整站官方默认设置')
+    } catch (err) {
+      setSaveStatus(`❌ 全局重置失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleIndexNow = async () => {
+    setIsIndexing(true)
+    setIndexMsg('')
+    try {
+      const res = await triggerIndexNow()
+      if (res.ok) {
+        setIndexMsg(`✅ 成功向 Bing / Yandex 推送 ${res.submitted ?? 0} 条番剧链接`)
+      } else {
+        setIndexMsg(`❌ 推送失败: ${res.message || '未知错误'}`)
+      }
+    } catch (err) {
+      setIndexMsg(`❌ 推送异常: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsIndexing(false)
+    }
+  }
+
+  const currentIconDisplay =
+    filePreview ||
+    (iconMode === 'upload' && iconUpdatedAt
+      ? `/api/site/favicon?v=${iconUpdatedAt}`
+      : iconMode === 'url' && iconUrl
+        ? iconUrl
+        : '/favicon-32x32.png')
+
+  return (
+    <CollapsibleSection
+      id="admin-panel"
+      icon={<span className="text-base sm:text-lg">🛡️</span>}
+      title="站点运维与管理 (Admin)"
+      badge={
+        isAdminUnlocked ? (
+          <span className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+            已授权
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-md border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--kz-fg-dim)]">
+            需口令
+          </span>
+        )
+      }
+      summary={isAdminUnlocked ? '站长模式已激活' : '需验证 ADMIN_SECRET'}
+      isOpen={isOpen}
+      onToggle={onToggle}
+    >
+      <div className="space-y-5 p-4 sm:p-5 pt-0">
+        {!isAdminUnlocked ? (
+          <div className="space-y-3 max-w-md">
+            <p className="text-xs text-[var(--kz-fg-dim)] leading-relaxed">
+              输入服务器环境变量中配置的 <code className="text-[var(--kz-accent)] font-semibold">ADMIN_SECRET</code> 口令以解锁站长管理权限。
+            </p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showSecret ? 'text' : 'password'}
+                  name="animaku_admin_key"
+                  id="animaku_admin_key"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-lpignore="true"
+                  placeholder="请输入管理员密钥 (ADMIN_SECRET)"
+                  value={secretInput}
+                  onChange={(e) => setSecretInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleUnlock()
+                  }}
+                  className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] pl-3 pr-8 py-2 text-xs sm:text-sm text-[var(--kz-fg)] placeholder-[var(--kz-fg-dim)] outline-none focus:border-[var(--kz-accent)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((prev) => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--kz-fg-dim)] hover:text-[var(--kz-fg)] text-xs select-none"
+                  title={showSecret ? '隐藏密码' : '显示密码'}
+                  tabIndex={-1}
+                >
+                  {showSecret ? '🙈' : '👁️'}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleUnlock()}
+                disabled={isVerifying}
+                className="inline-flex items-center justify-center rounded-xl bg-[var(--kz-accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[var(--kz-accent-hover)] active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {isVerifying ? '验证中…' : '解锁管理'}
+              </button>
+            </div>
+            {authError && <p className="text-xs text-rose-400">{authError}</p>}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* 站点基本信息 */}
+            <div className="space-y-3">
+              <div className="text-xs font-bold text-[var(--kz-fg)] flex items-center gap-1.5">
+                <span>🎨</span> 站点品牌与标语
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-[var(--kz-fg-dim)]">网站名称 (Title)</label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="默认: Animaku"
+                    maxLength={50}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-2 text-xs text-[var(--kz-fg)] placeholder-[var(--kz-fg-dim)] outline-none focus:border-[var(--kz-accent)]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-[var(--kz-fg-dim)]">网站副标语 (Tagline)</label>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="默认: 在线弹幕播放"
+                    maxLength={100}
+                    value={taglineInput}
+                    onChange={(e) => setTaglineInput(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-2 text-xs text-[var(--kz-fg)] placeholder-[var(--kz-fg-dim)] outline-none focus:border-[var(--kz-accent)]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 网站图标管理 */}
+            <div className="space-y-3 pt-3 border-t border-[var(--kz-border)]/40">
+              <div className="text-xs font-bold text-[var(--kz-fg)] flex items-center gap-1.5">
+                <span>🖼️</span> 网站图标 (Favicon)
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 rounded-xl bg-[var(--kz-bg-soft)]/60 border border-[var(--kz-border)]/50">
+                <div className="flex items-center gap-3 shrink-0">
+                  <img
+                    src={currentIconDisplay}
+                    alt="图标预览"
+                    className="w-10 h-10 rounded-xl object-cover ring-1 ring-[var(--kz-border)] bg-black/5"
+                  />
+                  <div className="text-[11px] text-[var(--kz-fg-dim)]">
+                    <div>当前生效模式：<span className="font-semibold text-[var(--kz-fg)]">{iconMode === 'upload' ? '本地上传' : iconMode === 'url' ? '外部外链' : '官方默认'}</span></div>
+                    {iconMode === 'upload' && iconUpdatedAt ? <div className="text-[10px]">更新时间戳：{iconUpdatedAt}</div> : null}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleResetIcon}
+                    className="inline-flex items-center rounded-lg border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] px-2.5 py-1 text-xs text-[var(--kz-fg-muted)] hover:border-rose-500/50 hover:text-rose-400 transition-colors"
+                  >
+                    恢复官方默认
+                  </button>
+                </div>
+              </div>
+
+              {/* 模式选择 */}
+              <div className="flex items-center gap-4 text-xs pt-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="iconModeChoice"
+                    checked={modeInput === 'upload'}
+                    onChange={() => setModeInput('upload')}
+                  />
+                  <span>本地文件上传 (≤2MB)</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="iconModeChoice"
+                    checked={modeInput === 'url'}
+                    onChange={() => setModeInput('url')}
+                  />
+                  <span>外部图片外链 (URL)</span>
+                </label>
+              </div>
+
+              {modeInput === 'upload' ? (
+                <div className="space-y-1.5">
+                  <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-[var(--kz-border)] bg-[var(--kz-bg-soft)] text-xs text-[var(--kz-fg-muted)] cursor-pointer hover:border-[var(--kz-accent)] transition-colors">
+                    <span>📁 选择本地图片文件…</span>
+                    <input
+                      type="file"
+                      accept=".ico,.png,.jpg,.jpeg,.webp,image/x-icon,image/png,image/jpeg,image/webp"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {selectedFile ? (
+                    <span className="text-xs text-emerald-400 ml-2">
+                      已就绪：{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                    </span>
+                  ) : null}
+                  <p className="text-[11px] text-[var(--kz-fg-dim)]">
+                    支持 ICO, PNG, JPG, WebP 格式，单个文件限制 2MB。安全机制自动封杀 SVG 脚本。
+                  </p>
+                </div>
+              ) : modeInput === 'url' ? (
+                <div className="space-y-1.5">
+                  <input
+                    type="url"
+                    autoComplete="off"
+                    placeholder="https://example.com/logo.png"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-2 text-xs text-[var(--kz-fg)] placeholder-[var(--kz-fg-dim)] outline-none focus:border-[var(--kz-accent)]"
+                  />
+                  <p className="text-[11px] text-[var(--kz-fg-dim)]">
+                    输入外部 CDN 或图床公开图片链接（仅支持 http/https，由访客浏览器直连加载）。
+                  </p>
+                </div>
+              ) : null}
+
+              {/* 保存与重置操作区 */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveAll}
+                  className="inline-flex items-center justify-center rounded-xl bg-[var(--kz-accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[var(--kz-accent-hover)] active:scale-95 disabled:opacity-50"
+                >
+                  {isSaving ? '正在保存…' : '保存站点设置'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleResetAll}
+                  className="inline-flex items-center justify-center rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-2 text-xs font-medium text-[var(--kz-fg-muted)] hover:border-rose-500/50 hover:text-rose-400 transition-colors active:scale-95 disabled:opacity-50"
+                >
+                  恢复全局默认
+                </button>
+                {saveStatus ? <span className="text-xs text-[var(--kz-fg-muted)]">{saveStatus}</span> : null}
+              </div>
+            </div>
+
+            {/* IndexNow 搜索引擎推送 */}
+            <div className="space-y-2 pt-3 border-t border-[var(--kz-border)]/40">
+              <div className="text-xs font-bold text-[var(--kz-fg)] flex items-center gap-1.5">
+                <span>🚀</span> 搜索引擎即时推送 (IndexNow)
+              </div>
+              <p className="text-[11px] text-[var(--kz-fg-dim)]">
+                向 Bing（必应）、Yandex、Naver 主流引擎即时推送全站最新番剧 URL，加快收录效率。
+              </p>
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  disabled={isIndexing}
+                  onClick={handleIndexNow}
+                  className="inline-flex items-center justify-center rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-1.5 text-xs font-medium text-[var(--kz-fg)] hover:border-[var(--kz-accent)] hover:text-[var(--kz-accent)] active:scale-95 disabled:opacity-50"
+                >
+                  {isIndexing ? '推送中…' : '立即触发全站推送'}
+                </button>
+                {indexMsg ? <span className="text-xs text-[var(--kz-fg-muted)]">{indexMsg}</span> : null}
+              </div>
+            </div>
+
+            {/* 退出管理 */}
+            <div className="pt-3 border-t border-[var(--kz-border)]/40 flex justify-end">
+              <button
+                type="button"
+                onClick={lockAdmin}
+                className="text-xs text-[var(--kz-fg-dim)] hover:text-rose-400 transition-colors"
+              >
+                退出管理模式
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </CollapsibleSection>
   )
 }
 

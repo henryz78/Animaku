@@ -9,7 +9,8 @@ import {
 import clsx from 'clsx'
 import { defaultNavSettings, useSettingsStore } from '../stores/settings'
 import { useSearchHistoryStore } from '../stores/search-history'
-import { getSiteBranding } from '../lib/site-branding'
+import { useSiteConfigStore } from '../stores/site-config'
+import { getSiteBranding, useSiteBranding } from '../lib/site-branding'
 import { preloadRoute, preloadCoreNavigationRoutes } from '../lib/route-preload'
 import { DocumentSeo } from './DocumentSeo'
 import { SiteFooter } from './SiteFooter'
@@ -424,7 +425,16 @@ function SearchIcon() {
 }
 
 export function Layout() {
-  const b = getSiteBranding()
+  const b = useSiteBranding()
+  const iconMode = useSiteConfigStore((s) => s.iconMode)
+  const iconUrl = useSiteConfigStore((s) => s.iconUrl)
+  const iconUpdatedAt = useSiteConfigStore((s) => s.iconUpdatedAt)
+  const fetchConfig = useSiteConfigStore((s) => s.fetchConfig)
+
+  useEffect(() => {
+    void fetchConfig()
+  }, [fetchConfig])
+
   const navigate = useNavigate()
   const location = useLocation()
   const [params] = useSearchParams()
@@ -604,11 +614,17 @@ export function Layout() {
             onClick={() => setMenuOpen(false)}
           >
             <img
-              src="/favicon-32x32.png"
+              src={
+                iconMode === 'upload' && iconUpdatedAt
+                  ? `/api/site/favicon?v=${iconUpdatedAt}`
+                  : iconMode === 'url' && iconUrl
+                    ? iconUrl
+                    : '/favicon-32x32.png'
+              }
               alt={b.productName}
               width={32}
               height={32}
-              className="h-7 w-7 rounded-full ring-1 ring-[var(--kz-border)] sm:h-8 sm:w-8"
+              className="h-7 w-7 rounded-full object-cover ring-1 ring-[var(--kz-border)] sm:h-8 sm:w-8"
               decoding="async"
             />
             <span className="hidden flex-col leading-tight sm:flex">

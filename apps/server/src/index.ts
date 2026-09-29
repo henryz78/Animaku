@@ -18,6 +18,13 @@ import { pluginRoutes } from './routes/plugin'
 import { sourceRoutes } from './routes/source'
 import { mediaRoutes } from './routes/media'
 import { statsRoutes } from './routes/stats'
+import { siteRoutes, adminSiteRoutes } from './routes/site'
+import {
+  getSiteConfig,
+  hasCustomFavicon,
+  getCustomFaviconPath,
+  validateIconBuffer,
+} from './lib/site-config'
 import {
   buildRobotsTxt,
   buildDynamicSitemapXml,
@@ -170,6 +177,8 @@ app.route('/api/plugin', pluginRoutes)
 app.route('/api/source', sourceRoutes)
 app.route('/api/media', mediaRoutes)
 app.route('/api/stats', statsRoutes)
+app.route('/api/site', siteRoutes)
+app.route('/api/admin', adminSiteRoutes)
 
 // Host-aware SEO & AI discovery files (before SPA static so they are not shadowed by public/)
 app.get('/robots.txt', (c) => {
@@ -262,10 +271,37 @@ if (webRoot) {
     }
   })
 
+  // Custom Favicon interception (serves data/favicon.ico with nosniff header or redirects to external URL)
+  app.get('/favicon.ico', async (c, next) => {
+    const cfg = getSiteConfig()
+    if (cfg.iconMode === 'upload' && hasCustomFavicon()) {
+      try {
+        const data = readFileSync(getCustomFaviconPath())
+        const check = validateIconBuffer(data)
+        const mime = check.valid && check.mime ? check.mime : 'image/x-icon'
+        return new Response(data, {
+          status: 200,
+          headers: {
+            'Content-Type': mime,
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'public, max-age=86400',
+          },
+        })
+      } catch {
+        return next()
+      }
+    } else if (cfg.iconMode === 'url' && cfg.iconUrl) {
+      return c.redirect(cfg.iconUrl, 302)
+    }
+    return next()
+  })
+
   app.use('*', async (c, next) => {
     if (c.req.path.startsWith('/api')) return next()
-    // Dynamic robots/llms/sitemap/subject already handled above
+    // Dynamic robots/llms/sitemap/subject and dynamically-injected HTML routes already handled
     if (
+      c.req.path === '/' ||
+      c.req.path === '/index.html' ||
       c.req.path === '/robots.txt' ||
       c.req.path === '/llms.txt' ||
       c.req.path === '/sitemap.xml' ||
