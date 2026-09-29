@@ -358,6 +358,7 @@ export function useMediaEngine({
     }
 
     let softPlayCleanup: (() => void) | null = null
+    let progressiveCleanup: (() => void) | null = null
 
     const softPlay = () => {
       if (!alive()) return
@@ -503,16 +504,28 @@ export function useMediaEngine({
     }
 
     const attachProgressive = () => {
-      while (video.firstChild) {
-        video.removeChild(video.firstChild)
-      }
-      video.removeAttribute('src')
+      let retryCount = 0
+      const MAX_RETRIES = 2
+      let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-      const sourceEl = document.createElement('source')
-      sourceEl.src = activeSrc
-      const mime = inferMediaMimeType(activeSrc, formatHintRef.current)
-      if (mime) {
-        sourceEl.type = mime
+      const mountAndLoad = () => {
+        if (!alive()) return
+        while (video.firstChild) {
+          video.removeChild(video.firstChild)
+        }
+        video.removeAttribute('src')
+
+        const sourceEl = document.createElement('source')
+        sourceEl.src = activeSrc
+        const mime = inferMediaMimeType(activeSrc, formatHintRef.current)
+        if (mime) {
+          sourceEl.type = mime
+        }
+
+        sourceEl.addEventListener('error', onMediaError, { once: true })
+        video.addEventListener('error', onMediaError, { once: true })
+        video.appendChild(sourceEl)
+        video.load()
       }
 
       const onDurationChange = () => {
@@ -527,6 +540,21 @@ export function useMediaEngine({
       const onMediaError = () => {
         if (!alive()) return
         if (tryAuthRefresh()) return
+
+        // 针对冷连接闪断 (ERR_CONNECTION_CLOSED / 网络瞬时重置) 自动执行指数退避自愈重试
+        if (
+          retryCount < MAX_RETRIES &&
+          video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+        ) {
+          retryCount++
+          const delay = retryCount === 1 ? 350 : 800
+          retryTimer = setTimeout(() => {
+            if (!alive()) return
+            mountAndLoad()
+          }, delay)
+          return
+        }
+
         setLoading(false)
         setBufferingUi(false)
         const reason = video.error?.code
@@ -540,12 +568,16 @@ export function useMediaEngine({
         reportLoadFailed(reason)
       }
 
-      sourceEl.addEventListener('error', onMediaError, { once: true })
-      video.addEventListener('error', onMediaError, { once: true })
-      video.appendChild(sourceEl)
-      video.load()
+      mountAndLoad()
 
       video.addEventListener('loadedmetadata', onReady, { once: true })
+
+      progressiveCleanup = () => {
+        if (retryTimer) {
+          clearTimeout(retryTimer)
+          retryTimer = null
+        }
+      }
 
       const onStalled = () => {
         if (!alive()) return
@@ -1130,6 +1162,12 @@ export function useMediaEngine({
         /* ignore */
       }
       softPlayCleanup = null
+      try {
+        progressiveCleanup?.()
+      } catch {
+        /* ignore */
+      }
+      progressiveCleanup = null
       video.removeEventListener('timeupdate', onTime)
       video.removeEventListener('pause', onPause)
       video.removeEventListener('play', onPlay)
