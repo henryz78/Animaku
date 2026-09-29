@@ -28,6 +28,7 @@ export function useAnime4KPipeline({
   onFlashHint,
 }: UseAnime4KPipelineOptions) {
   const anime4kStopRef = useRef<Anime4KStop | null>(null)
+  const generationRef = useRef(0)
   const [srActive, setSrActive] = useState(false)
   const [webGpuOk, setWebGpuOk] = useState<boolean | null>(
     () => (typeof navigator !== 'undefined' && hasWebGPU() ? null : false),
@@ -49,6 +50,9 @@ export function useAnime4KPipeline({
 
   // Anime4K: only when mode !== off. Dynamic-import + disposable GPU controller.
   useEffect(() => {
+    const currentGen = ++generationRef.current
+    const isCurrent = () => generationRef.current === currentGen
+
     const mode = superResolution || 'off'
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -63,7 +67,6 @@ export function useAnime4KPipeline({
       return
     }
 
-    let cancelled = false
     let stop: Anime4KStop | null = null
 
     const unsupportedReason = (): string => {
@@ -78,7 +81,7 @@ export function useAnime4KPipeline({
         let ok = webGpuOk === true
         if (!ok) {
           ok = await supportsAnime4K()
-          if (cancelled) return
+          if (!isCurrent()) return
           setWebGpuOk(ok)
         }
         if (!ok) {
@@ -102,7 +105,7 @@ export function useAnime4KPipeline({
             window.setTimeout(done, 12_000)
           })
         }
-        if (cancelled) return
+        if (!isCurrent()) return
         if (!(video.videoWidth > 0)) {
           onFlashHint('超分等待视频尺寸超时，请等画面出来后再开', 4500)
           setSrActive(false)
@@ -113,7 +116,7 @@ export function useAnime4KPipeline({
         if (video.paused) {
           onFlashHint('超分将在开始播放后启动…', 2200)
           await new Promise<void>((resolve) => {
-            if (!video.paused || cancelled) {
+            if (!video.paused || !isCurrent()) {
               resolve()
               return
             }
@@ -128,11 +131,11 @@ export function useAnime4KPipeline({
             const onPlayingSr = () => finish()
             video.addEventListener('playing', onPlayingSr)
             const poll = window.setInterval(() => {
-              if (cancelled || !video.paused) finish()
+              if (!isCurrent() || !video.paused) finish()
             }, 250)
           })
         }
-        if (cancelled) return
+        if (!isCurrent()) return
 
         try {
           anime4kStopRef.current?.()
@@ -153,23 +156,42 @@ export function useAnime4KPipeline({
           mode: srMode,
           maxDimension: SR_MAX_DIMENSION[srMode],
           layoutEl: shellRef.current,
+          onFirstFrame: () => {
+            if (!isCurrent()) return
+            // First frame is verified and submitted to GPU queue; safely switch visible layer
+            setSrActive(true)
+            const nw = video.videoWidth || 0
+            onFlashHint(
+              srMode === 'quality'
+                ? `超分已开启（质量 · ${nw}p→2×）`
+                : `超分已开启（效率 · ${nw}p→2×）`,
+              2800,
+            )
+          },
+          onError: (reason) => {
+            if (!isCurrent()) return
+            try {
+              anime4kStopRef.current?.()
+            } catch {
+              /* ignore */
+            }
+            anime4kStopRef.current = null
+            setSrActive(false)
+            if (reason === 'security_error') {
+              onFlashHint('该视频源存在防盗链限制，无法使用超分', 3500)
+            } else {
+              onFlashHint('超分 GPU 渲染异常，已自动恢复原画播放', 4500)
+            }
+          },
         })
-        if (cancelled) {
+        if (!isCurrent()) {
           stop()
           return
         }
         anime4kStopRef.current = stop
-        setSrActive(true)
-        const nw = video.videoWidth || 0
-        onFlashHint(
-          srMode === 'quality'
-            ? `超分已开启（质量 · ${nw}p→2×）`
-            : `超分已开启（效率 · ${nw}p→2×）`,
-          2800,
-        )
       } catch (e) {
         console.warn('[player] Anime4K failed', e)
-        if (!cancelled) {
+        if (isCurrent()) {
           setSrActive(false)
           onFlashHint(
             e instanceof Error
@@ -184,7 +206,7 @@ export function useAnime4KPipeline({
     void run()
 
     return () => {
-      cancelled = true
+      generationRef.current += 1
       try {
         stop?.()
       } catch {
@@ -201,6 +223,7 @@ export function useAnime4KPipeline({
   }, [activeSrc, superResolution, videoRef, canvasRef, shellRef, webGpuOk, onFlashHint])
 
   const stopAnime4K = () => {
+    generationRef.current += 1
     try {
       anime4kStopRef.current?.()
     } catch {

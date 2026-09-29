@@ -15,6 +15,8 @@ import type { SuperResolutionMode } from '@animaku/shared'
 
 export type Anime4KStop = () => void
 
+export type CopyFrameResult = 'ready' | 'not_ready' | 'security_error' | 'error'
+
 export interface Anime4KStartOptions {
   video: HTMLVideoElement
   canvas: HTMLCanvasElement
@@ -26,6 +28,10 @@ export interface Anime4KStartOptions {
   maxDimension?: number
   /** Optional: measure layout from shell when canvas is not yet visible */
   layoutEl?: HTMLElement | null
+  /** Called once when the first SR frame is successfully submitted to the GPU queue */
+  onFirstFrame?: () => void
+  /** Called when unrecoverable error occurs (security error or persistent GPU failure) */
+  onError?: (reason: 'security_error' | 'gpu_error') => void
 }
 
 const FULLSCREEN_QUAD_WGSL = /* wgsl */ `
@@ -67,7 +73,8 @@ const SAMPLE_TEXTURE_WGSL = /* wgsl */ `
 
 @fragment
 fn main(@location(0) fragUV : vec2f) -> @location(0) vec4f {
-  return textureSampleBaseClampToEdge(myTexture, mySampler, fragUV);
+  let color = textureSampleBaseClampToEdge(myTexture, mySampler, fragUV);
+  return vec4f(color.rgb, 1.0);
 }
 `
 
@@ -326,7 +333,7 @@ export async function startAnime4K(
   context.configure({
     device,
     format: presentationFormat,
-    alphaMode: 'premultiplied',
+    alphaMode: 'opaque',
   })
 
   // COPY_SRC not required; RENDER_ATTACHMENT needed by some browsers for
@@ -411,13 +418,21 @@ export async function startAnime4K(
   })
 
   let stopped = false
+  let firstFrameDispatched = false
   /** Tab hidden — skip GPU work until visible again */
   let pausedForHidden = false
   const WIDTH = native.width
   const HEIGHT = native.height
-  let frameErrors = 0
+  let consecutiveGpuErrors = 0
+  const MAX_CONSECUTIVE_GPU_ERRORS = 5
   let rvfcHandle: number | undefined
   let rafHandle: number | undefined
+
+  const notifyFirstFrame = () => {
+    if (firstFrameDispatched || stopped) return
+    firstFrameDispatched = true
+    options.onFirstFrame?.()
+  }
 
   const cancelPendingFrame = () => {
     try {
@@ -451,64 +466,136 @@ export async function startAnime4K(
   }
 
   let copyFailedLogged = false
-  const copyFrame = () => {
-    // Always try to copy when we have a current frame (including paused)
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return false
+  const copyFrame = (): CopyFrameResult => {
+    // Always check whether media element actually has decodable current frame
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return 'not_ready'
+    }
     try {
       device.queue.copyExternalImageToTexture(
         { source: video },
         { texture: videoFrameTexture },
         [WIDTH, HEIGHT],
       )
-      return true
+      return 'ready'
     } catch (e) {
-      // Cross-origin video without CORS → SecurityError; SR cannot run.
+      const isSecurityError =
+        (e instanceof DOMException && e.name === 'SecurityError') ||
+        (typeof e === 'object' &&
+          e !== null &&
+          'name' in e &&
+          (e as { name?: string }).name === 'SecurityError') ||
+        (e instanceof Error && e.message.toLowerCase().includes('cross-origin'))
+
+      if (isSecurityError) {
+        if (!copyFailedLogged) {
+          copyFailedLogged = true
+          console.warn(
+            '[anime4k] copyExternalImageToTexture failed with SecurityError (CORS restriction)',
+            e,
+          )
+        }
+        return 'security_error'
+      }
+
       if (!copyFailedLogged) {
         copyFailedLogged = true
-        console.warn(
-          '[anime4k] copyExternalImageToTexture failed (CORS / not ready?)',
-          e,
-        )
+        console.warn('[anime4k] copyExternalImageToTexture failed', e)
       }
-      return false
+      return 'error'
+    }
+  }
+
+  const renderPassInternal = () => {
+    const commandEncoder = device.createCommandEncoder()
+    for (const p of pipelines) p.pass(commandEncoder)
+    const passEncoder = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    })
+    passEncoder.setPipeline(renderPipeline)
+    passEncoder.setBindGroup(0, renderBindGroup)
+    passEncoder.draw(6)
+    passEncoder.end()
+    device.queue.submit([commandEncoder.finish()])
+  }
+
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    document.removeEventListener('visibilitychange', onVisibility)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', onLayoutResize)
+      document.removeEventListener('fullscreenchange', onLayoutResize)
+    }
+    if (resizeTimer !== undefined) clearTimeout(resizeTimer)
+    try {
+      ro?.disconnect()
+    } catch {
+      /* ignore */
+    }
+    ro = null
+    cancelPendingFrame()
+    try {
+      videoFrameTexture.destroy()
+    } catch {
+      /* ignore */
+    }
+    try {
+      device.destroy()
+    } catch {
+      /* ignore */
     }
   }
 
   const frame = () => {
     if (stopped || pausedForHidden) return
     try {
-      if (!copyFrame()) {
-        // Don't burn GPU on empty/black frames; retry next tick
-        frameErrors += 1
-        if (frameErrors === 1 || frameErrors % 60 === 0) {
+      const copyRes = copyFrame()
+      if (copyRes === 'security_error') {
+        stop()
+        options.onError?.('security_error')
+        return
+      }
+
+      if (copyRes === 'not_ready') {
+        // Buffering or waiting for frame — not a GPU error, continue polling
+      } else if (copyRes === 'error') {
+        consecutiveGpuErrors += 1
+        if (consecutiveGpuErrors >= MAX_CONSECUTIVE_GPU_ERRORS) {
           console.warn(
-            '[anime4k] skip frame — video copy failed (check CORS on media)',
+            '[anime4k] exceeded max consecutive copy errors, stopping pipeline',
           )
+          stop()
+          options.onError?.('gpu_error')
+          return
         }
       } else {
-        const commandEncoder = device.createCommandEncoder()
-        for (const p of pipelines) p.pass(commandEncoder)
-        const passEncoder = commandEncoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-              loadOp: 'clear',
-              storeOp: 'store',
-            },
-          ],
-        })
-        passEncoder.setPipeline(renderPipeline)
-        passEncoder.setBindGroup(0, renderBindGroup)
-        passEncoder.draw(6)
-        passEncoder.end()
-        device.queue.submit([commandEncoder.finish()])
-        frameErrors = 0
+        // copyRes === 'ready'
+        renderPassInternal()
+        consecutiveGpuErrors = 0
+        if (!firstFrameDispatched) {
+          notifyFirstFrame()
+        }
       }
     } catch (e) {
-      frameErrors += 1
-      if (frameErrors <= 3 || frameErrors % 60 === 0) {
+      consecutiveGpuErrors += 1
+      if (consecutiveGpuErrors <= 3 || consecutiveGpuErrors % 60 === 0) {
         console.warn('[anime4k] frame error', e)
+      }
+      if (consecutiveGpuErrors >= MAX_CONSECUTIVE_GPU_ERRORS) {
+        console.warn(
+          '[anime4k] exceeded max consecutive render errors, stopping pipeline',
+        )
+        stop()
+        options.onError?.('gpu_error')
+        return
       }
     }
     if (stopped || pausedForHidden) return
@@ -567,7 +654,7 @@ export async function startAnime4K(
       context.configure({
         device,
         format: presentationFormat,
-        alphaMode: 'premultiplied',
+        alphaMode: 'opaque',
       })
     } catch (e) {
       console.warn('[anime4k] resize reconfigure failed', e)
@@ -590,8 +677,23 @@ export async function startAnime4K(
     document.addEventListener('fullscreenchange', onLayoutResize)
   }
 
-  // Prime one frame so first paint is not empty black
-  copyFrame()
+  // Attempt immediate first-frame render if video frame is already available (fast path)
+  try {
+    const initialCopy = copyFrame()
+    if (initialCopy === 'security_error') {
+      stop()
+      options.onError?.('security_error')
+      return stop
+    }
+    if (initialCopy === 'ready') {
+      renderPassInternal()
+      void device.queue.onSubmittedWorkDone().then(() => {
+        if (!stopped) notifyFirstFrame()
+      })
+    }
+  } catch (e) {
+    console.warn('[anime4k] initial frame render error', e)
+  }
 
   if (!document.hidden) {
     scheduleFrame()
@@ -599,33 +701,7 @@ export async function startAnime4K(
     pausedForHidden = true
   }
 
-  return () => {
-    if (stopped) return
-    stopped = true
-    document.removeEventListener('visibilitychange', onVisibility)
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('resize', onLayoutResize)
-      document.removeEventListener('fullscreenchange', onLayoutResize)
-    }
-    if (resizeTimer !== undefined) clearTimeout(resizeTimer)
-    try {
-      ro?.disconnect()
-    } catch {
-      /* ignore */
-    }
-    ro = null
-    cancelPendingFrame()
-    try {
-      videoFrameTexture.destroy()
-    } catch {
-      /* ignore */
-    }
-    try {
-      device.destroy()
-    } catch {
-      /* ignore */
-    }
-  }
+  return stop
 }
 
 export const SUPER_RESOLUTION_LABELS: Record<SuperResolutionMode, string> = {
