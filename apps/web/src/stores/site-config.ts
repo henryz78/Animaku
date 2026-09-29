@@ -29,6 +29,78 @@ export interface SiteConfigState {
 }
 
 const ADMIN_STORAGE_KEY = 'animaku-admin-secret'
+const SITE_CONFIG_CACHE_KEY = 'animaku-site-config-cache'
+
+interface CachedSiteConfig {
+  siteName: string
+  siteTagline: string
+  iconMode: 'default' | 'upload' | 'url'
+  iconUrl: string
+  iconUpdatedAt: number
+}
+
+function getInitialSiteConfig(): CachedSiteConfig {
+  if (typeof document === 'undefined') {
+    return {
+      siteName: '',
+      siteTagline: '',
+      iconMode: 'default',
+      iconUrl: '',
+      iconUpdatedAt: 0,
+    }
+  }
+
+  // 1. 优先从 localStorage 读取历史持久化配置
+  try {
+    const raw = localStorage.getItem(SITE_CONFIG_CACHE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<CachedSiteConfig>
+      if (parsed && typeof parsed === 'object') {
+        return {
+          siteName: typeof parsed.siteName === 'string' ? parsed.siteName : '',
+          siteTagline: typeof parsed.siteTagline === 'string' ? parsed.siteTagline : '',
+          iconMode: ['default', 'upload', 'url'].includes(parsed.iconMode as string)
+            ? (parsed.iconMode as 'default' | 'upload' | 'url')
+            : 'default',
+          iconUrl: typeof parsed.iconUrl === 'string' ? parsed.iconUrl : '',
+          iconUpdatedAt: typeof parsed.iconUpdatedAt === 'number' ? parsed.iconUpdatedAt : 0,
+        }
+      }
+    }
+  } catch {}
+
+  // 2. 首次访问从服务端 SSR 注入的 meta[name="application-name"] 同步继承（首屏 0 闪烁）
+  const metaApp = document.querySelector('meta[name="application-name"]')?.getAttribute('content')?.trim()
+  if (metaApp && metaApp !== 'Animaku 动漫' && metaApp !== 'Animaku') {
+    return {
+      siteName: metaApp,
+      siteTagline: '',
+      iconMode: 'default',
+      iconUrl: '',
+      iconUpdatedAt: 0,
+    }
+  }
+
+  return {
+    siteName: '',
+    siteTagline: '',
+    iconMode: 'default',
+    iconUrl: '',
+    iconUpdatedAt: 0,
+  }
+}
+
+function saveSiteConfigToCache(data: CachedSiteConfig) {
+  try {
+    localStorage.setItem(SITE_CONFIG_CACHE_KEY, JSON.stringify(data))
+  } catch {}
+}
+
+function clearSiteConfigCache() {
+  try {
+    localStorage.removeItem(SITE_CONFIG_CACHE_KEY)
+  } catch {}
+}
 
 function getSavedAdminSecret(): string {
   try {
@@ -75,13 +147,18 @@ export function updateDocumentFavicon(
 }
 
 const initialSecret = getSavedAdminSecret()
+const initialConfig = getInitialSiteConfig()
+
+if (initialConfig.iconMode !== 'default' || initialConfig.iconUpdatedAt > 0) {
+  updateDocumentFavicon(initialConfig.iconMode, initialConfig.iconUrl, initialConfig.iconUpdatedAt)
+}
 
 export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
-  siteName: '',
-  siteTagline: '',
-  iconMode: 'default',
-  iconUrl: '',
-  iconUpdatedAt: 0,
+  siteName: initialConfig.siteName,
+  siteTagline: initialConfig.siteTagline,
+  iconMode: initialConfig.iconMode,
+  iconUrl: initialConfig.iconUrl,
+  iconUpdatedAt: initialConfig.iconUpdatedAt,
   isLoaded: false,
 
   adminSecret: initialSecret,
@@ -99,16 +176,21 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
       }>('/api/site/config')
 
       if (res && res.ok) {
-        set({
+        const nextConfig: CachedSiteConfig = {
           siteName: res.siteName || '',
           siteTagline: res.siteTagline || '',
           iconMode: res.iconMode || 'default',
           iconUrl: res.iconUrl || '',
           iconUpdatedAt: res.iconUpdatedAt || 0,
+        }
+
+        set({
+          ...nextConfig,
           isLoaded: true,
         })
 
-        updateDocumentFavicon(res.iconMode || 'default', res.iconUrl, res.iconUpdatedAt)
+        saveSiteConfigToCache(nextConfig)
+        updateDocumentFavicon(nextConfig.iconMode, nextConfig.iconUrl, nextConfig.iconUpdatedAt)
       }
     } catch (err) {
       console.warn('[site-config] 加载站点配置失败:', err)
@@ -170,13 +252,15 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
     })
 
     if (res && res.ok && res.data) {
-      set({
+      const nextConfig: CachedSiteConfig = {
         siteName: res.data.siteName || '',
         siteTagline: res.data.siteTagline || '',
         iconMode: res.data.iconMode || 'default',
         iconUrl: res.data.iconUrl || '',
         iconUpdatedAt: res.data.iconUpdatedAt || 0,
-      })
+      }
+      set(nextConfig)
+      saveSiteConfigToCache(nextConfig)
       updateDocumentFavicon(res.data.iconMode, res.data.iconUrl, res.data.iconUpdatedAt)
     }
   },
@@ -199,10 +283,19 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
     })
 
     if (res && res.ok) {
+      const current = get()
+      const nextConfig: CachedSiteConfig = {
+        siteName: current.siteName,
+        siteTagline: current.siteTagline,
+        iconMode: 'upload',
+        iconUrl: current.iconUrl,
+        iconUpdatedAt: res.iconUpdatedAt,
+      }
       set({
         iconMode: 'upload',
         iconUpdatedAt: res.iconUpdatedAt,
       })
+      saveSiteConfigToCache(nextConfig)
       updateDocumentFavicon('upload', undefined, res.iconUpdatedAt)
     }
   },
@@ -221,10 +314,19 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
     })
 
     if (res && res.ok) {
+      const current = get()
+      const nextConfig: CachedSiteConfig = {
+        siteName: current.siteName,
+        siteTagline: current.siteTagline,
+        iconMode: 'default',
+        iconUrl: current.iconUrl,
+        iconUpdatedAt: res.iconUpdatedAt,
+      }
       set({
         iconMode: 'default',
         iconUpdatedAt: res.iconUpdatedAt,
       })
+      saveSiteConfigToCache(nextConfig)
       updateDocumentFavicon('default')
     }
   },
@@ -248,6 +350,7 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
     })
 
     if (res && res.ok) {
+      clearSiteConfigCache()
       set({
         siteName: '',
         siteTagline: '',

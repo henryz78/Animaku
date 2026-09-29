@@ -17,6 +17,7 @@ import {
   DEFAULT_DESCRIPTION,
   type PageSeo,
 } from '../lib/seo'
+import { useSiteConfigStore } from '../stores/site-config'
 
 /**
  * Keeps <title> / meta / JSON-LD in sync with the current client route.
@@ -24,6 +25,8 @@ import {
  */
 export function DocumentSeo() {
   const { pathname, search } = useLocation()
+  const siteName = useSiteConfigStore((s) => s.siteName)
+  const siteTagline = useSiteConfigStore((s) => s.siteTagline)
 
   const subjectMatch = matchPath(
     { path: '/subject/:id', end: true },
@@ -59,7 +62,7 @@ export function DocumentSeo() {
           : undefined
       const summary = item?.summary?.trim()
       const title = item || subject.isError
-        ? formatSubjectTitle(name, alt)
+        ? formatSubjectTitle(name, alt, siteName?.trim() || undefined)
         : '加载中…'
       const description = formatSubjectDescription(name, summary, 160)
       const cover = item ? coverOf(item, 'large') || coverOf(item) : ''
@@ -118,6 +121,15 @@ export function DocumentSeo() {
 
     const staticSeo = STATIC_ROUTE_SEO[pathname]
     if (staticSeo) {
+      let routeTitle = staticSeo.title
+      if (pathname === '/') {
+        const trimmedName = siteName?.trim()
+        const trimmedTagline = siteTagline?.trim()
+        if (trimmedName) {
+          routeTitle = trimmedTagline ? `${trimmedName} - ${trimmedTagline}` : trimmedName
+        }
+      }
+
       let routeJsonLd: PageSeo['jsonLd'] = undefined
       if (pathname === '/') {
         routeJsonLd = buildWebsiteJsonLd()
@@ -135,13 +147,14 @@ export function DocumentSeo() {
 
       return {
         ...staticSeo,
+        title: routeTitle,
         path: pathname,
         jsonLd: routeJsonLd,
       }
     }
 
     return {
-      title: 'Animaku',
+      title: siteName?.trim() || 'Animaku',
       description: DEFAULT_DESCRIPTION,
       path: pathname,
       robots: 'noindex,follow',
@@ -154,6 +167,8 @@ export function DocumentSeo() {
     subject.data,
     subject.isError,
     subjectId,
+    siteName,
+    siteTagline,
   ])
 
   useEffect(() => {

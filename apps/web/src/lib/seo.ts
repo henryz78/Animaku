@@ -92,7 +92,21 @@ export function formatDocumentTitle(pageTitle: string, siteName?: string): strin
   const effectiveSiteName = siteName || dynamicName || SITE_NAME
   const t = pageTitle.trim()
   if (!t || t === effectiveSiteName) return effectiveSiteName
-  if (t.includes(effectiveSiteName) || (effectiveSiteName !== 'Animaku' && t.includes('Animaku'))) return t
+
+  // 若标题已经包含当前生效的站名，避免重复拼接
+  if (t.includes(effectiveSiteName)) return t
+
+  // 若标题以默认的 " · Animaku" 或 " · Animaku 动漫" 结尾，替换为自定义站名
+  if (t.endsWith(' · Animaku') || t.endsWith(' · Animaku 动漫')) {
+    const cleanPrefix = t.replace(/ · (Animaku 动漫|Animaku)$/, '')
+    return `${cleanPrefix} · ${effectiveSiteName}`
+  }
+
+  // 针对默认首页标题 'Animaku 动漫'，若已设置了自定义站名，则直接返回自定义站名
+  if (t === SITE_NAME || t === 'Animaku') {
+    return effectiveSiteName
+  }
+
   return `${t} · ${effectiveSiteName}`
 }
 
