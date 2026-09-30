@@ -74,6 +74,11 @@ ENV BANGUMI_API=$BANGUMI_API \
 RUN pnpm --filter @animaku/web build \
  && pnpm --filter @animaku/server build
 
+# ---- runtime native deps (sharp prebuilts for target platform) ----
+FROM node:22-bookworm-slim AS prod-deps
+WORKDIR /app
+RUN npm install --omit=dev sharp@0.35.5 && npm cache clean --force
+
 # ---- runtime (node dist only; no tsx / no full monorepo src) ----
 FROM node:22-bookworm-slim AS runner
 ENV NODE_ENV=production \
@@ -88,7 +93,8 @@ WORKDIR /app
 # Ensure data directory exists with correct permissions for non-root node user
 RUN mkdir -p /app/data && chown -R node:node /app/data
 
-# Bundled server is self-contained; only need the JS + SPA assets (no sourcemaps)
+# Native modules (sharp) + bundled server JS + SPA assets
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/apps/server/dist/index.js ./dist/index.js
 COPY --from=build --chown=node:node /app/apps/web/dist ./public
 
