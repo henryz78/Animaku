@@ -4,7 +4,7 @@
 
   <h1>Animaku</h1>
 
-  <img src="apps/web/public/android-chrome-512x512.png" width="160" alt="Animaku logo" />
+  <img src="apps/web/public/logo.png" width="160" alt="Animaku logo" />
 
   <p>
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" />
@@ -12,219 +12,130 @@
     <img src="https://img.shields.io/badge/Vite-6-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 6" />
     <img src="https://img.shields.io/badge/Hono-API-E36002?style=for-the-badge&logo=hono&logoColor=white" alt="Hono API" />
     <img src="https://img.shields.io/badge/WebGPU-Anime4K-9cf?style=for-the-badge&logo=webgpu&logoColor=white" alt="WebGPU Anime4K" />
-    <img src="https://img.shields.io/badge/Direct_Stream-1080P-10B981?style=for-the-badge" alt="Direct Stream" />
     <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Ready" />
   </p>
 
-  <p>
-    现代化自托管二次元番剧流媒体客户端。<br />
-    开箱内置优质 1080P 原画直链源，原生集成 <b>Bangumi 周更放送与维基数据</b>、
-    <b>流畅弹幕系统</b>、<b>WebGPU 实时 4K 超分</b>、<b>智能跳过 OP/ED</b>、
-    <b>桌面宽屏模式</b> 与 <b>智能番剧推荐流</b>。<br />
-    内置精选优质多源与平滑切源，数据 100% 纯本地私有，日夜双模态琉璃美学。开箱即用，专为追番设计。
-  </p>
-
-  <p>
-    <img
-      src="docs/screenshots/watch-player.png"
-      alt="Animaku 播放页：弹幕、宽屏模式、多线路选集与番剧推荐流"
-      width="900"
-    />
-  </p>
+  <p>现代化自托管二次元番剧流媒体客户端。开箱内置优质 1080P 直链源，集成 Bangumi 放送表、弹幕聚合、WebGPU 实时超分与智能跳过 OP/ED。专为追番设计 (～￣▽￣)～</p>
 
 </div>
 
-## 这是什么
+## 屏幕截图
 
-**Animaku** 是基于 **React 19 + 轻量 Hono 服务端** 构建的现代化自托管番剧流媒体 Web 客户端。你可以用 Docker 一键部署在个人 NAS 或轻量云服务器上，随时随地享受沉浸、无干扰的追番体验。
+<p align="center">
+  <img src="docs/screenshots/watch-player.png" alt="Animaku 播放页" width="900" />
+</p>
 
-| 维度 | 功能亮点 |
-| :--- | :--- |
-| **🎬 画质与播放** | 内置 1080P 直链免代理播放、WebGPU 实时 4K 超分、智能跳过片头片尾、M3U8 智能去广告 |
-| **💬 弹幕生态** | 弹弹play 海量弹幕聚合、本地 XML / Pakku 弹幕导入、防遮挡降噪、高能进度条热力图 |
-| **🔌 片源与选线** | 内置精选优质播放源、支持拖拽自定义优先级排序、多源聚合与快捷换源 |
-| **📅 维基与追番** | Bangumi 每日周更放送表、番剧/剧场版多重检索、个人追番管理与 Bangumi Token 进度同步 |
-| **🖥️ 交互与设计** | 桌面端「🖥️ 宽屏模式」一屏铺满、智能番剧推荐流、手机端触控手势、日夜双模态琉璃质感 |
-| **🔒 隐私与性能** | 数据 100% 存储在浏览器本地，默认零商业数据追踪（自建可选启用）；轻量内存占用，单容器秒级启动 |
+## 功能 / 开发计划
 
-## ✨ 核心特性
+- [X]  1080P 直链播放
+- [X]  WebGPU 实时超分 (Anime4K)
+- [X]  弹幕播放与聚合 (弹弹play)
+- [X]  本地弹幕导入 (.xml / Pakku)
+- [X]  进度条高能弹幕热力图
+- [X]  智能跳过片头片尾 (OP/ED)
+- [X]  智能去广告切片
+- [X]  多视频源支持与快捷换源
+- [X]  视频源自定义排序与独立配置
+- [X]  番剧周更时间表 (Bangumi)
+- [X]  番剧搜索与详情浏览
+- [X]  个人追番管理与 Bangumi 进度同步
+- [X]  智能番剧推荐
+- [X]  桌面宽屏模式 / 网页全屏 / 系统全屏
+- [X]  画面比例切换 (16:9 / 4:3 / 铺满 / 拉伸)
+- [X]  原画截图 / 画面翻转 / 画中画
+- [X]  播放器信息统计 (Stats for Nerds)
+- [X]  移动端触控手势操作
+- [X]  播放历史记录
+- [X]  深色 / 浅色模式
+- [X]  Docker 一键部署
+- [ ]  还有更多 (/・ω・＼)
 
-- 🎬 **极致播放体验与画质增强**
-  - **开箱即播**：内置高质量 1080P 原画直链视频源，客户端直连 CDN 秒开，无需服务端消耗额外中转流量。
-  - **WebGPU 实时 4K 超分**：集成 Anime4K 算法，利用本地显卡算力实时重构动画线条，让 720P/1080P 老番秒变 4K 极清，提供多档效果调节。
-  - **智能跳过片头片尾**：原生集成社区时间戳，进度条自动标明 OP/ED 范围并支持无感一键跳过；内置打标助手，轻松微调时间轴并可贡献数据。
-  - **纯净无干扰**：内置智能切片过滤，自动识别并切除第三方片源的插播广告切片。
-  - **灵活屏幕模式**：提供 **「🖥️ 宽屏模式」**（通栏铺满、首屏守恒无纵向滚动）、**「🔲 网页全屏」** 与 **「⛶ 系统全屏」**，支持 16:9、4:3、铺满等多画幅自由裁切。
-  - **专业播放信息 (Stats for Nerds)**：右键随时查看实时编解码器、分辨率、丢帧率、缓冲区健康度与下载速率；支持一键高清原画截图、画面翻转与画中画。
+## 部署与运行
 
-- 💬 **流畅弹幕与互动系统**
-  - **海量弹幕聚合**：精准匹配弹弹play 与多方弹幕库，支持自定义换源匹配与分集关联。
-  - **本地弹幕导入**：支持直接拖拽外部 `.xml` 或 Pakku 弹幕文件进播放器加载。
-  - **丝滑不抖动**：弹幕平滑均匀滚动，不遮挡、不横跳，支持同屏弹幕密度过载过滤与重复弹幕聚合。
-  - **高能热力波形**：播放器进度条动态呈现高能弹幕波形，名场面与剧情转折一目了然。
-
-- 🔌 **内置精选多源与快捷换源**
-  - **开箱内置优质源**：内置多个精选高质量视频源，覆盖当季新番与经典老番，客户端直连秒开。
-  - **直观源管理**：支持鼠标与手机触摸拖拽排序、首位自动设为默认主源，支持按源独立开关与广告过滤。
-  - **播放页无缝换源**：播放时随时展开右侧选源抽屉，支持多源结果预览与一键快速切换，稳定不中断。
-
-- 📅 **番剧维基、追番与推荐**
-  - **每日放送时间表**：实时同步 Bangumi 周更日历，本季度新番更新状态随时查阅。
-  - **海量检索与详情**：支持动画、剧场版与特摄影视混合检索，完整呈现演职员表与分集剧情。
-  - **追番同步**：支持「想看/在看/看过」本地标记，填入 Bangumi Token 即可实现双向数据同步。
-  - **智能番剧推荐流**：播放页下方精选续作、剧场版与同类型高分佳作，支持一键顺畅换番。
-
-- 🖥️ **现代多端交互与轻量设计**
-  - **日夜双模态美学**：精心调校的浅色温润质感与深色琉璃暗黑模式。
-  - **折叠式全局设置**：配置项清晰分类，折叠卡片外显实时状态胶囊，直观易懂。
-  - **移动端沉浸手势**：全屏双击播放/暂停、长按 2.0x 极速快进、横向滑动屏幕调进度并显示时间差 HUD。
-
-- 🔒 **本地私密与轻量高效**
-  - **默认零数据追踪**：默认不包含任何统计代码或商业分析 SDK，播放记录、配置与密钥 100% 保存在本地浏览器；部署者可按需配置构建变量启用分析，启用后由部署者负责告知与合规。
-  - **极速低资源占用**：轻量后端服务，内存占用低，单核 512MB 轻量云主机也能轻松流畅跑。
-
-## 🚀 快速开始
-
-大多数用户推荐直接使用 **Docker Compose** 一键部署；无需在宿主机配置 Node.js 或前端编译环境。
-
-### Docker 一键部署（推荐）
+推荐使用 **Docker Compose** 一键部署：
 
 ```bash
 # 1. 克隆代码仓库
 git clone https://github.com/uerax/Animaku.git animaku
 cd animaku
 
-# 2. 准备配置文件（可按需修改端口等）
+# 2. 准备配置文件
 cp .env.example .env
 
-# 3. 启动容器（自动拉取官方预编译镜像，免编译秒级启动）
+# 3. 启动容器
 docker compose up -d
 ```
 
-启动完成后，使用浏览器访问 **`http://localhost:8787`** 即可开启追番之旅。
+启动后使用浏览器访问 `http://localhost:8787` 即可。
 
 <details>
-<summary><b>更多 Docker 常用命令</b></summary>
+<summary>本地开发与调试</summary>
 
 ```bash
-# 查看运行日志
-docker compose logs -f
-
-# 停止容器
-docker compose down
-
-# 本地源码构建与二次开发部署（支持自定义前端 VITE_* 变量）
-docker compose -f docker-compose.build.yml up -d --build
-
-# 单命令运行（不使用 compose）
-docker build -t animaku .
-docker run -d --name animaku --restart unless-stopped -p 8787:8787 --env-file .env -v ./data:/app/data animaku
-```
-
-- **数据持久化**：应用数据库默认保存在宿主机的 `./data` 目录中。
-- **纯直连零带宽**：内置默认源均为浏览器直连源站 CDN，服务器仅转发轻量元数据，零消耗 VPS 媒体流量。
-</details>
-
----
-
-### 本地开发与调试
-
-适合希望参与贡献或二次开发的开发者。
-
-```bash
-# 环境要求：Node.js ≥ 20，推荐使用 pnpm 9.15.0
+# 环境要求：Node.js ≥ 20，推荐 pnpm
 pnpm install
 cp .env.example .env
-
-# 启动本地开发服务（前端 Vite 5173 + 后端 Hono 8787）
 pnpm dev
 ```
 
 浏览器打开 `http://localhost:5173` 进行调试。
+</details>
 
-## 🎮 播放操作与快捷键
+## 快捷键与手势
 
 ### 键盘快捷键
 
 | 快捷键 | 功能 |
 | :--- | :--- |
 | `Space` / `K` | 播放 / 暂停 |
-| `←` / `→` | 后退 5 秒 / 前进 5 秒 |
+| `←` / `→` | 快退 5 秒 / 快进 5 秒 |
 | `↑` / `↓` | 音量调整 ±5% |
-| `F` | 切换播放器全屏 |
-| `Shift + W` | 切换网页全屏 (Web Fullscreen) |
-| `W` | 切换画面比例（16:9 / 4:3 / 铺满 Cover / 拉伸 Fill） |
-| `D` | 弹幕循环切换（开启 → 精简防挡 → 关闭） |
-| `Alt + M` | 打开弹幕设置与搜索面板 |
-| `,` / `.` / `/` | 弹幕延后 0.5s / 提前 0.5s / 偏移重置 |
-| `P` / `N` | 播放 上一集 / 下一集 |
-| `鼠标右键` | 唤出播放器高级菜单（Stats for Nerds 统计 / 截图 / 镜像 / 画中画 / 超分） |
-| 拖拽本地文件 | 拖入本地视频文件（MP4/MKV/WebM）直接播放；拖入 `.xml` 导入弹幕 |
+| `F` | 系统全屏 |
+| `Shift + W` | 网页全屏 |
+| `W` | 切换画面比例 |
+| `D` | 切换弹幕显示状态 |
+| `Alt + M` | 打开弹幕设置面板 |
+| `,` / `.` / `/` | 弹幕延后 / 提前 / 重置偏移 |
+| `P` / `N` | 上一集 / 下一集 |
+| `鼠标右键` | 高级菜单（信息统计 / 截图 / 镜像 / 超分） |
 
-### 移动端触控手势
+### 移动端手势
 
-* **双击屏幕**：快速切换 播放 / 暂停
-* **长按屏幕**：触发 `2.0X ⚡` 快速倍速，松开手指恢复正常速度
-* **滑动进度**：在屏幕中央直观显示滑动时间差（例如 `+00:15`）
+- **双击屏幕**：播放 / 暂停
+- **长按屏幕**：2.0X 极速快进
+- **横向滑动**：快速寻轨快进 / 快退
 
-## ⚙️ 常用环境变量
-
-完整配置项详细字典、生效时机与场景预设模板请参阅 📖 **[配置选项全景参考指南 Wiki (`docs/wiki/Configuration-Guide.md`)](docs/wiki/Configuration-Guide.md)** 与 [.env.example](.env.example)。
-
-| 变量名 | 默认值 | 作用说明 |
-| :--- | :--- | :--- |
-| `PORT` | `8787` | 服务端与 Web 界面访问端口 |
-| `HOST` | `0.0.0.0` | 监听地址（`0.0.0.0` 允许局域网/公网访问，`127.0.0.1` 仅本机） |
-| `DATA_DIR` | `./data` | 数据库持久化存储目录 |
-| `BANGUMI_API` | `mirror` | Bangumi API 请求线路（`mirror` 国内镜像加速 / `official` 官方直连） |
-| `BANGUMI_IMAGE` | `mirror` | 番剧封面图片线路（`mirror` 国内镜像加速 / `official` 官方直连） |
-
-## 📚 进阶架构与运维指南
-
-深入的技术原理与运维部署方案已沉淀在专门的文档中：
-
-- ⚙️ [配置选项全景参考指南 Wiki (`docs/wiki/Configuration-Guide.md`)](docs/wiki/Configuration-Guide.md)：所有环境变量详尽字典、运行时与构建期生效机理、安全避坑与预设模板。
-- 🏛️ [系统架构与核心技术设计 (`docs/architecture.md`)](docs/architecture.md)：原地 Seek 状态机、弹幕物理时钟算法、规则引擎流水线模型与高并发服务端架构。
-- ⚡ [弹幕渲染引擎性能报告 (`docs/danmaku-perf.md`)](docs/danmaku-perf.md)：弹幕物理引擎算法解析与 rVFC 硬件帧同步性能基准。
-- 🔌 [视频源接入规范与专有适配器实战 (`docs/video-source-integration.md`)](docs/video-source-integration.md)：规则引擎算子接入 SOP、专有适配器编写与防盗链规范。
-- 🛡️ [Cloudflare CDN 接入与 WAF 防护指南 (`docs/cloudflare-cdn-rules.md`)](docs/cloudflare-cdn-rules.md)：边缘缓存规则、工业级 WAF 表达式与源站防御。
-- 🗄️ [数据库字典与 Docker 免安装运维 (`docs/database-maintenance.md`)](docs/database-maintenance.md)：数据表 Schema 字典与单行免安装快速查询指南。
-
-## ❓ 常见问题 (FAQ)
+## Q&A
 
 <details>
-<summary><b>为什么少数番剧播放时会有广告？</b></summary>
-本项目完全开源，自身绝无任何广告。广告来自部分第三方片源切片中自带的广告切片。可在设置中开启「广告过滤」（内置智能算法自动识别并切除）。若该源广告切片过于隐蔽，可切换右侧其他视频源播放。
+<summary>使用者 Q&A</summary>
+
+#### Q: 为什么少数番剧播放时会有广告？
+A: 本项目不包含任何广告。广告来自第三方切片源，可在设置中开启「广告过滤」，或在播放页右侧切换其他视频源。
+
+#### Q: 为什么开启超分辨率 (Anime4K) 后播放卡顿？
+A: 超分辨率依赖本地显卡算力 (WebGPU)。若硬件性能有限，建议在设置或右键菜单中选择「效率档」，或仅针对 720P 及以下分辨率开启。
+
+#### Q: 为什么部分视频源无法播放或加载缓慢？
+A: 部分第三方源可能存在临时网络波动或反爬限制，可在右侧源抽屉中一键切换其他线路。
+
+#### Q: 弹幕获取失败或提示未配置？
+A: 默认使用内置公共接口。如需更稳定体验，可在 [弹弹play 开放平台](https://www.dandanplay.com/) 免费申请专属 API 并配置到环境变量中。
+
 </details>
 
-<details>
-<summary><b>为什么开启 Anime4K 超分后画面有点卡顿？</b></summary>
-Anime4K 依赖本地浏览器的 WebGPU 显卡硬件计算。如果设备显卡负载较高，建议在设置或右键菜单中选择「效率档」，或仅针对 720P 及以下分辨率的番剧开启。
-</details>
+## 免责声明
 
-<details>
-<summary><b>为什么部分视频源无法播放或解析超时？</b></summary>
-部分第三方片源可能存在临时的源站故障、反爬拦截或域名轮换。项目内置了多条高质量专有直链线路（如稀饭 Next、次元城、月之祠、TvTFun 等），可在右侧视频源抽屉中一键切换其他线路。
-</details>
+本软件仅供学习交流与自托管使用。本项目不存储、不分发任何音视频文件，所有视频均索引自互联网第三方公开源。使用本项目需遵守所在地法律法规，并尊重版权方的合法权益。
 
-<details>
-<summary><b>弹幕提示「未配置」或获取失败？</b></summary>
-默认情况下系统会使用内置通道自动获取。若想获得最稳定的体验，可在 [弹弹play 开放平台](https://www.dandanplay.com/) 免费申请自己的专属 API 密钥并配置到 `.env`。
-</details>
+## 隐私政策
 
-## 声明与致谢
+默认不收集任何用户数据，不内置任何商业追踪 SDK。播放历史与个人配置均仅保存在使用者浏览器本地。
 
-### 免责声明
-本软件按「现状」提供，仅供学习交流与自托管使用。本项目不存储、不分发任何音视频文件，所有视频均索引自互联网第三方公开源。用户需自行遵守所在地法律法规并尊重版权方的知识产权。
+## 致谢
 
-### 隐私保护
-* **默认零数据遥测**：默认不包含任何第三方统计或行为追踪代码。若自托管部署者自行配置构建参数注入分析服务（如 Clarity/GA4），须自行遵守所在地合规要求并履行告知义务。
-* **纯本地存储**：播放记录、收藏夹与个性化配置仅保存在使用者浏览器本地（`localStorage`）。
-
-### 特别致谢
-感谢以下优秀的开源项目与平台为 Animaku 提供的灵感支持：
-* [Kazumi](https://github.com/Predidit/Kazumi) —— 早期灵感参考
-* [Bangumi 番组计划](https://bangumi.tv/) 开放平台 —— 丰富的二次元番剧元数据与时间表
-* [弹弹play](https://www.dandanplay.com/) 开放平台 —— 详尽的番剧弹幕库支持
-* [Anime4K](https://github.com/bloc97/Anime4K) —— 优秀的动画实时超分辨率算法
-* [bangumi-oped](https://github.com/uerax/bangumi-oped) —— 开源番剧片头片尾时间戳数据
+- [Kazumi](https://github.com/Predidit/Kazumi) —— 优秀的设计与灵感来源
+- [Bangumi 番组计划](https://bangumi.tv/) —— 番剧维基数据与更新日历
+- [弹弹play](https://www.dandanplay.com/) —— 弹幕库支持
+- [Anime4K](https://github.com/bloc97/Anime4K) —— 实时动画超分辨率算法
+- [bangumi-oped](https://github.com/uerax/bangumi-oped) —— 片头片尾时间戳数据
