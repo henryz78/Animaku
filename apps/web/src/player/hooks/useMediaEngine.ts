@@ -505,11 +505,13 @@ export function useMediaEngine({
 
     const attachProgressive = () => {
       let retryCount = 0
-      const MAX_RETRIES = 2
+      const MAX_RETRIES = 3
       let retryTimer: ReturnType<typeof setTimeout> | null = null
+      let isRetrying = false
 
       const mountAndLoad = () => {
         if (!alive()) return
+        isRetrying = false
         while (video.firstChild) {
           video.removeChild(video.firstChild)
         }
@@ -539,24 +541,26 @@ export function useMediaEngine({
 
       const onMediaError = () => {
         if (!alive()) return
+        // 防抖去重：source 与 video 元素在同一失败周期内会先后抛出 error，防止重复消耗重试预算
+        if (isRetrying) return
         if (tryAuthRefresh()) return
 
         const errCode = video.error?.code
-        // 严格排除非网络错误：用户中止(1)、解码失败(3)、格式不支持(4)等终端错误绝对不重试
-        const isTerminalError =
-          errCode === 1 ||
-          errCode === 3 ||
-          errCode === 4
+        // 严格排除非网络错误：用户中止(1)、解码失败(3)等终端错误绝对不重试
+        // 注意：在 <source> 结构下，网络闪断/404/连接重置等故障抛出的 error code 按 W3C 规范为 4 (MEDIA_ERR_SRC_NOT_SUPPORTED)
+        // 因此在首帧尚未渲染 (readyState < HAVE_CURRENT_DATA) 阶段，不能把 4 排除出网络自愈重试
+        const isTerminalError = errCode === 1 || errCode === 3
 
-        // 仅在初始加载阶段（未解码出首帧）且属于非终端网络暂态故障时，允许消耗重试预算（最多 2 次静默重试）
+        // 仅在初始加载阶段（未解码出首帧）且属于非终端故障时，允许消耗重试预算（最多 3 次静默重试）
         const canRetryNetwork =
           !isTerminalError &&
           retryCount < MAX_RETRIES &&
           video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
 
         if (canRetryNetwork) {
+          isRetrying = true
           retryCount++
-          const delay = retryCount === 1 ? 300 : 800
+          const delay = retryCount === 1 ? 250 : retryCount === 2 ? 500 : 1000
           retryTimer = setTimeout(() => {
             if (!alive()) return
             mountAndLoad()
