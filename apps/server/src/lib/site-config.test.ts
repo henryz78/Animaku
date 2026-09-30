@@ -10,6 +10,10 @@ import {
   saveCustomFavicon,
   resetCustomFavicon,
   hasCustomFavicon,
+  hasCustomIcon,
+  CUSTOM_ICON_FILENAMES,
+  generateIconSuite,
+  resetAllSiteConfig,
 } from './site-config'
 import { siteRoutes, adminSiteRoutes } from '../routes/site'
 import { config } from '../config'
@@ -142,5 +146,52 @@ test('site-config: resetAllSiteConfig clears all custom settings and favicon', (
   assert.equal(cfg.siteTagline, undefined)
   assert.equal(cfg.iconMode, 'default')
   assert.equal(cfg.iconUrl, undefined)
+})
+
+test('site-config: generateIconSuite and saveCustomFavicon creates unified multi-size icon suite', async () => {
+  // Use a small valid 1x1 transparent PNG buffer to test the pipeline
+  const testPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  )
+
+  const suite = await generateIconSuite(testPng)
+  assert.ok(suite['favicon.ico'].length > 0)
+  assert.ok(suite['favicon-16x16.png'].length > 0)
+  assert.ok(suite['favicon-32x32.png'].length > 0)
+  assert.ok(suite['apple-touch-icon.png'].length > 0)
+  assert.ok(suite['android-chrome-192x192.png'].length > 0)
+  assert.ok(suite['android-chrome-512x512.png'].length > 0)
+  assert.ok(suite['logo.png'].length > 0)
+
+  // Test ICO magic header
+  assert.equal(suite['favicon.ico'][0], 0x00)
+  assert.equal(suite['favicon.ico'][1], 0x00)
+  assert.equal(suite['favicon.ico'][2], 0x01)
+  assert.equal(suite['favicon.ico'][3], 0x00)
+
+  // Save custom favicon suite
+  await saveCustomFavicon(testPng)
+  const cfg = getSiteConfig()
+  assert.equal(cfg.iconMode, 'upload')
+  assert.ok(typeof cfg.iconUpdatedAt === 'number' && cfg.iconUpdatedAt > 0)
+
+  for (const filename of CUSTOM_ICON_FILENAMES) {
+    assert.equal(hasCustomIcon(filename), true, `Expected ${filename} to exist`)
+  }
+  assert.equal(hasCustomFavicon(), true)
+
+  // Reset custom favicon
+  resetCustomFavicon()
+  const resetCfg = getSiteConfig()
+  assert.equal(resetCfg.iconMode, 'default')
+  assert.ok(resetCfg.iconUpdatedAt! >= cfg.iconUpdatedAt!)
+
+  for (const filename of CUSTOM_ICON_FILENAMES) {
+    assert.equal(hasCustomIcon(filename), false, `Expected ${filename} to be removed`)
+  }
+
+  // Clean up test state so it does not pollute other tests
+  resetAllSiteConfig()
 })
 

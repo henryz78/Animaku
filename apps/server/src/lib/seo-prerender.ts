@@ -198,17 +198,29 @@ export function applySiteBrandingToHtml(
     )
   }
 
-  // Favicon 动态替换与版本指纹穿透
-  if (cfg.iconMode === 'upload' && cfg.iconUpdatedAt) {
-    result = result.replace(
-      /<link\s+[^>]*rel=["']icon["'][^>]*href=["'][^"']*favicon\.ico[^"']*["'][^>]*\/?>/gi,
-      `<link rel="icon" href="/api/site/favicon?v=${cfg.iconUpdatedAt}" sizes="any" />`,
-    )
-  } else if (cfg.iconMode === 'url' && cfg.iconUrl) {
-    result = result.replace(
-      /<link\s+[^>]*rel=["']icon["'][^>]*href=["'][^"']*favicon\.ico[^"']*["'][^>]*\/?>/gi,
-      `<link rel="icon" href="${escapeHtml(cfg.iconUrl)}" sizes="any" />`,
-    )
+  // Favicon 与多尺寸图标统一版本指纹穿透 (保持全套图标同源同版本)
+  if (cfg.iconMode === 'url' && cfg.iconUrl) {
+    const escapedUrl = escapeHtml(cfg.iconUrl)
+    result = result
+      .replace(
+        /<link\s+[^>]*rel=["']icon["'][^>]*\/?>/gi,
+        `<link rel="icon" href="${escapedUrl}" sizes="any" />`,
+      )
+      .replace(
+        /<link\s+[^>]*rel=["']apple-touch-icon["'][^>]*\/?>/gi,
+        `<link rel="apple-touch-icon" href="${escapedUrl}" />`,
+      )
+  } else if (cfg.iconUpdatedAt) {
+    const v = `?v=${cfg.iconUpdatedAt}`
+    result = result
+      .replace(/href=["']\/favicon\.ico(?:\?[^"']*)?["']/gi, `href="/favicon.ico${v}"`)
+      .replace(/href=["']\/favicon-32x32\.png(?:\?[^"']*)?["']/gi, `href="/favicon-32x32.png${v}"`)
+      .replace(/href=["']\/favicon-16x16\.png(?:\?[^"']*)?["']/gi, `href="/favicon-16x16.png${v}"`)
+      .replace(/href=["']\/apple-touch-icon\.png(?:\?[^"']*)?["']/gi, `href="/apple-touch-icon.png${v}"`)
+      .replace(/href=["']\/android-chrome-192x192\.png(?:\?[^"']*)?["']/gi, `href="/android-chrome-192x192.png${v}"`)
+      .replace(/href=["']\/site\.webmanifest(?:\?[^"']*)?["']/gi, `href="/site.webmanifest${v}"`)
+      .replace(/content=["']\/android-chrome-512x512\.png(?:\?[^"']*)?["']/gi, `content="/android-chrome-512x512.png${v}"`)
+      .replace(/href=["']\/logo\.png(?:\?[^"']*)?["']/gi, `href="/logo.png${v}"`)
   }
 
   return result

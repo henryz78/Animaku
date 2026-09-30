@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import sharp from 'sharp'
 import { config } from '../config'
 
 export interface SiteConfig {
@@ -14,11 +15,39 @@ const MAX_ICON_SIZE = 2 * 1024 * 1024 // 2MB
 
 let memoryCache: SiteConfig | null = null
 
+export const CUSTOM_ICON_FILENAMES = [
+  'favicon.ico',
+  'favicon-16x16.png',
+  'favicon-32x32.png',
+  'apple-touch-icon.png',
+  'android-chrome-192x192.png',
+  'android-chrome-512x512.png',
+  'logo.png',
+] as const
+
+export type CustomIconFilename = (typeof CUSTOM_ICON_FILENAMES)[number]
+
 function getSiteConfigFilePath(): string {
   return resolve(config.dataDir, 'site-config.json')
 }
 
+export function getCustomIconsDir(): string {
+  return resolve(config.dataDir, 'icons')
+}
+
+export function getCustomIconPath(filename: CustomIconFilename): string {
+  return resolve(getCustomIconsDir(), filename)
+}
+
+export function hasCustomIcon(filename: CustomIconFilename): boolean {
+  return existsSync(getCustomIconPath(filename))
+}
+
 export function getCustomFaviconPath(): string {
+  const newPath = getCustomIconPath('favicon.ico')
+  if (existsSync(newPath)) {
+    return newPath
+  }
   return resolve(config.dataDir, 'favicon.ico')
 }
 
@@ -141,21 +170,176 @@ export function validateIconBuffer(buf: Buffer): {
   }
 }
 
+function buildIcoBuffer(png16: Buffer, png32: Buffer): Buffer {
+  const icoHeader = Buffer.alloc(6)
+  icoHeader.writeUInt16LE(0, 0)
+  icoHeader.writeUInt16LE(1, 2)
+  icoHeader.writeUInt16LE(2, 4)
+
+  const e16 = Buffer.alloc(16)
+  e16.writeUInt8(16, 0)
+  e16.writeUInt8(16, 1)
+  e16.writeUInt16LE(1, 4)
+  e16.writeUInt16LE(32, 6)
+  e16.writeUInt32LE(png16.length, 8)
+  e16.writeUInt32LE(38, 12)
+
+  const e32 = Buffer.alloc(16)
+  e32.writeUInt8(32, 0)
+  e32.writeUInt8(32, 1)
+  e32.writeUInt16LE(1, 4)
+  e32.writeUInt16LE(32, 6)
+  e32.writeUInt32LE(png32.length, 8)
+  e32.writeUInt32LE(38 + png16.length, 12)
+
+  return Buffer.concat([icoHeader, e16, e32, png16, png32])
+}
+
+export interface GeneratedIconSuite {
+  'favicon.ico': Buffer
+  'favicon-16x16.png': Buffer
+  'favicon-32x32.png': Buffer
+  'apple-touch-icon.png': Buffer
+  'android-chrome-192x192.png': Buffer
+  'android-chrome-512x512.png': Buffer
+  'logo.png': Buffer
+}
+
 /**
- * 保存自定义 Favicon 文件到 data 目录
+ * 工业级多尺寸图标与站点 Logo 衍生管道：
+ * 1. 严格正方形宽高比居中包含（fit: contain, position: center）
+ * 2. 采用高质量 Lanczos3 重采样算法
+ * 3. 16x16 / 32x32 微尺寸自适应锐化，防止小图在浏览器标签页糊成一团
+ * 4. logo.png (192x192) 专供站内导航栏与品牌 UI，原图过小时启用 withoutEnlargement 避免虚假放大失真
+ * 5. 生成标准封装的 Windows 多分辨率 ICO
  */
-export function saveCustomFavicon(buf: Buffer): void {
+export async function generateIconSuite(inputBuf: Buffer): Promise<GeneratedIconSuite> {
+  let sourceImg: ReturnType<typeof sharp> | null = null
+
+  // 若输入为标准 ICO 文件，解析提取其中面积最大的有效位图，避免二次包装失真
+  if (
+    inputBuf.length > 4 &&
+    inputBuf[0] === 0x00 &&
+    inputBuf[1] === 0x00 &&
+    inputBuf[2] === 0x01 &&
+    inputBuf[3] === 0x00
+  ) {
+    const count = inputBuf.readUInt16LE(4)
+    let bestEntry: { w: number; h: number; size: number; offset: number } | null = null
+    let maxArea = 0
+    for (let i = 0; i < count; i++) {
+      const offset = 6 + i * 16
+      const w = inputBuf[offset] || 256
+      const h = inputBuf[offset + 1] || 256
+      const area = w * h
+      if (area > maxArea) {
+        maxArea = area
+        bestEntry = {
+          w,
+          h,
+          size: inputBuf.readUInt32LE(offset + 8),
+          offset: inputBuf.readUInt32LE(offset + 12),
+        }
+      }
+    }
+
+    if (bestEntry && bestEntry.offset + bestEntry.size <= inputBuf.length) {
+      const data = inputBuf.subarray(bestEntry.offset, bestEntry.offset + bestEntry.size)
+      if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+        sourceImg = sharp(data)
+      } else if (data.length >= 40 && data.readUInt32LE(0) === 40) {
+        // 32bpp DIB 像素转换
+        const biBitCount = data.readUInt16LE(14)
+        if (biBitCount === 32) {
+          const w = bestEntry.w
+          const h = bestEntry.h
+          const rawRgba = Buffer.alloc(w * h * 4)
+          const pixelOffset = 40
+          for (let y = 0; y < h; y++) {
+            const srcRow = h - 1 - y
+            for (let x = 0; x < w; x++) {
+              const srcIdx = pixelOffset + (srcRow * w + x) * 4
+              const dstIdx = (y * w + x) * 4
+              rawRgba[dstIdx] = data[srcIdx + 2]
+              rawRgba[dstIdx + 1] = data[srcIdx + 1]
+              rawRgba[dstIdx + 2] = data[srcIdx]
+              rawRgba[dstIdx + 3] = data[srcIdx + 3]
+            }
+          }
+          sourceImg = sharp(rawRgba, { raw: { width: w, height: h, channels: 4 } })
+        }
+      }
+    }
+  }
+
+  if (!sourceImg) {
+    sourceImg = sharp(inputBuf)
+  }
+
+  sourceImg = sourceImg.rotate()
+
+  async function renderVariant(
+    size: number,
+    opts: { sharpen?: boolean; withoutEnlargement?: boolean } = {},
+  ): Promise<Buffer> {
+    let stage = sourceImg!.clone().resize(size, size, {
+      fit: 'contain',
+      position: 'center',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      kernel: 'lanczos3',
+      withoutEnlargement: opts.withoutEnlargement ?? false,
+    })
+
+    if (opts.sharpen) {
+      stage = stage.sharpen({ sigma: 0.5, m1: 0.5, m2: 2.0 })
+    }
+
+    return stage.png({ compressionLevel: 9 }).toBuffer()
+  }
+
+  const png16 = await renderVariant(16, { sharpen: true })
+  const png32 = await renderVariant(32, { sharpen: true })
+  const png180 = await renderVariant(180)
+  const png192 = await renderVariant(192)
+  const png512 = await renderVariant(512)
+  const logoPng = await renderVariant(192, { withoutEnlargement: true })
+  const icoBuf = buildIcoBuffer(png16, png32)
+
+  return {
+    'favicon.ico': icoBuf,
+    'favicon-16x16.png': png16,
+    'favicon-32x32.png': png32,
+    'apple-touch-icon.png': png180,
+    'android-chrome-192x192.png': png192,
+    'android-chrome-512x512.png': png512,
+    'logo.png': logoPng,
+  }
+}
+
+/**
+ * 保存自定义 Favicon 文件并自动衍生全套规格到 data/icons 目录
+ */
+export async function saveCustomFavicon(buf: Buffer): Promise<void> {
   const check = validateIconBuffer(buf)
   if (!check.valid) {
     throw new Error(check.error || '非法图标文件')
   }
 
-  if (!existsSync(config.dataDir)) {
-    mkdirSync(config.dataDir, { recursive: true })
+  const iconsDir = getCustomIconsDir()
+  if (!existsSync(iconsDir)) {
+    mkdirSync(iconsDir, { recursive: true })
   }
 
-  const targetPath = getCustomFaviconPath()
-  writeFileSync(targetPath, buf)
+  const suite = await generateIconSuite(buf)
+
+  for (const filename of CUSTOM_ICON_FILENAMES) {
+    writeFileSync(resolve(iconsDir, filename), suite[filename])
+  }
+
+  // 兼容老路径 data/favicon.ico
+  try {
+    writeFileSync(resolve(config.dataDir, 'favicon.ico'), suite['favicon.ico'])
+  } catch {}
 
   saveSiteConfig({
     iconMode: 'upload',
@@ -167,13 +351,25 @@ export function saveCustomFavicon(buf: Buffer): void {
  * 删除自定义 Favicon 并恢复默认图标模式
  */
 export function resetCustomFavicon(): void {
-  const targetPath = getCustomFaviconPath()
-  if (existsSync(targetPath)) {
-    try {
-      unlinkSync(targetPath)
-    } catch (err) {
-      console.warn('[site-config] 删除 custom favicon 失败:', err)
+  const dir = getCustomIconsDir()
+  if (existsSync(dir)) {
+    for (const file of CUSTOM_ICON_FILENAMES) {
+      const p = resolve(dir, file)
+      if (existsSync(p)) {
+        try {
+          unlinkSync(p)
+        } catch (err) {
+          console.warn(`[site-config] 删除 custom icon ${file} 失败:`, err)
+        }
+      }
     }
+  }
+
+  const legacyIco = resolve(config.dataDir, 'favicon.ico')
+  if (existsSync(legacyIco)) {
+    try {
+      unlinkSync(legacyIco)
+    } catch {}
   }
 
   saveSiteConfig({
@@ -186,13 +382,25 @@ export function resetCustomFavicon(): void {
  * 全局恢复为官方默认设置（清除 site-config.json 与自定义 Favicon 文件）
  */
 export function resetAllSiteConfig(): SiteConfig {
-  const customFavicon = getCustomFaviconPath()
-  if (existsSync(customFavicon)) {
-    try {
-      unlinkSync(customFavicon)
-    } catch (err) {
-      console.warn('[site-config] 删除 custom favicon 失败:', err)
+  const dir = getCustomIconsDir()
+  if (existsSync(dir)) {
+    for (const file of CUSTOM_ICON_FILENAMES) {
+      const p = resolve(dir, file)
+      if (existsSync(p)) {
+        try {
+          unlinkSync(p)
+        } catch (err) {
+          console.warn(`[site-config] 删除 custom icon ${file} 失败:`, err)
+        }
+      }
     }
+  }
+
+  const legacyIco = resolve(config.dataDir, 'favicon.ico')
+  if (existsSync(legacyIco)) {
+    try {
+      unlinkSync(legacyIco)
+    } catch {}
   }
 
   const configFile = getSiteConfigFilePath()

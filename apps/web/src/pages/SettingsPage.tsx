@@ -19,6 +19,7 @@ import {
 import { useSettingsStore } from '../stores/settings'
 import { isBuiltinPlugin, usePluginStore } from '../stores/plugins'
 import { useSiteConfigStore } from '../stores/site-config'
+import { IconCropModal } from '../components/IconCropModal'
 import { PageHeader } from '../components/ui'
 import { getSiteBranding } from '../lib/site-branding'
 import { EMPTY_ARRAY, FALLBACK_DANMAKU, FALLBACK_NAV, FALLBACK_PLAYER } from '../lib/stable'
@@ -1412,6 +1413,10 @@ function AdminPanelSection({
   const [urlInput, setUrlInput] = useState(iconUrl)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [filePreview, setFilePreview] = useState<string | null>(null)
+  const [cropModalData, setCropModalData] = useState<{
+    rawUrl: string
+    fileName: string
+  } | null>(null)
   const [saveStatus, setSaveStatus] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -1431,8 +1436,11 @@ function AdminPanelSection({
       if (filePreview && filePreview.startsWith('blob:')) {
         URL.revokeObjectURL(filePreview)
       }
+      if (cropModalData?.rawUrl && cropModalData.rawUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(cropModalData.rawUrl)
+      }
     }
-  }, [filePreview])
+  }, [filePreview, cropModalData])
 
   const handleUnlock = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -1468,10 +1476,17 @@ function AdminPanelSection({
     }
 
     setModeInput('upload')
-    setSelectedFile(file)
     setSaveStatus('')
-    const url = URL.createObjectURL(file)
-    setFilePreview(url)
+
+    // 若为标准 ICO 文件直接就绪；若为图片则弹出可视化裁切弹窗方便用户平移居中
+    if (lowerName.endsWith('.ico')) {
+      setSelectedFile(file)
+      const url = URL.createObjectURL(file)
+      setFilePreview(url)
+    } else {
+      const rawUrl = URL.createObjectURL(file)
+      setCropModalData({ rawUrl, fileName: file.name })
+    }
   }
 
   const handleSaveAll = async () => {
@@ -1558,10 +1573,10 @@ function AdminPanelSection({
   const currentIconDisplay =
     filePreview ||
     (iconMode === 'upload' && iconUpdatedAt
-      ? `/api/site/favicon?v=${iconUpdatedAt}`
+      ? `/logo.png?v=${iconUpdatedAt}`
       : iconMode === 'url' && iconUrl
         ? iconUrl
-        : '/favicon-32x32.png')
+        : '/logo.png')
 
   return (
     <CollapsibleSection
@@ -1720,22 +1735,35 @@ function AdminPanelSection({
 
               {modeInput === 'upload' ? (
                 <div className="space-y-1.5">
-                  <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-[var(--kz-border)] bg-[var(--kz-bg-soft)] text-xs text-[var(--kz-fg-muted)] cursor-pointer hover:border-[var(--kz-accent)] transition-colors">
-                    <span>📁 选择本地图片文件…</span>
-                    <input
-                      type="file"
-                      accept=".ico,.png,.jpg,.jpeg,.webp,image/x-icon,image/png,image/jpeg,image/webp"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-[var(--kz-border)] bg-[var(--kz-bg-soft)] text-xs text-[var(--kz-fg-muted)] cursor-pointer hover:border-[var(--kz-accent)] transition-colors">
+                      <span>📁 选择本地图片文件…</span>
+                      <input
+                        type="file"
+                        accept=".ico,.png,.jpg,.jpeg,.webp,image/x-icon,image/png,image/jpeg,image/webp"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {selectedFile && filePreview ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCropModalData({ rawUrl: filePreview, fileName: selectedFile.name })
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] text-xs text-[var(--kz-fg)] hover:border-[var(--kz-accent)] hover:text-[var(--kz-accent)] transition-colors cursor-pointer"
+                      >
+                        <span>✂️ 调整裁切/居中</span>
+                      </button>
+                    ) : null}
+                  </div>
                   {selectedFile ? (
-                    <span className="text-xs text-emerald-400 ml-2">
+                    <span className="text-xs text-emerald-400 block pt-1">
                       已就绪：{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
                     </span>
                   ) : null}
                   <p className="text-[11px] text-[var(--kz-fg-dim)]">
-                    支持 ICO, PNG, JPG, WebP 格式，单个文件限制 2MB。安全机制自动封杀 SVG 脚本。
+                    支持 PNG, JPG, WebP 自动可视化框选居中；单个文件限制 2MB。
                   </p>
                 </div>
               ) : modeInput === 'url' ? (
@@ -1810,6 +1838,21 @@ function AdminPanelSection({
           </div>
         )}
       </div>
+
+      {cropModalData && (
+        <IconCropModal
+          imageSrc={cropModalData.rawUrl}
+          fileName={cropModalData.fileName}
+          onConfirm={(croppedFile, previewUrl) => {
+            setSelectedFile(croppedFile)
+            setFilePreview(previewUrl)
+            setCropModalData(null)
+          }}
+          onCancel={() => {
+            setCropModalData(null)
+          }}
+        />
+      )}
     </CollapsibleSection>
   )
 }

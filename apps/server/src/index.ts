@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -23,6 +23,8 @@ import {
   getSiteConfig,
   hasCustomFavicon,
   getCustomFaviconPath,
+  hasCustomIcon,
+  getCustomIconPath,
   validateIconBuffer,
 } from './lib/site-config'
 import {
@@ -237,7 +239,8 @@ if (webRoot) {
     if (
       c.req.path === '/robots.txt' ||
       c.req.path === '/llms.txt' ||
-      c.req.path === '/sitemap.xml'
+      c.req.path === '/sitemap.xml' ||
+      c.req.path === '/site.webmanifest'
     ) {
       return next()
     }
@@ -271,7 +274,7 @@ if (webRoot) {
     }
   })
 
-  // Custom Favicon interception (serves data/favicon.ico with nosniff header or redirects to external URL)
+  // Custom Favicon interception (serves data/icons/favicon.ico with nosniff header or redirects to external URL)
   app.get('/favicon.ico', async (c, next) => {
     const cfg = getSiteConfig()
     if (cfg.iconMode === 'upload' && hasCustomFavicon()) {
@@ -296,15 +299,90 @@ if (webRoot) {
     return next()
   })
 
+  // Multi-size derived icons: favicon-16x16.png, favicon-32x32.png, apple-touch-icon.png, android-chrome-192x192.png, android-chrome-512x512.png, logo.png
+  for (const filename of [
+    'favicon-16x16.png',
+    'favicon-32x32.png',
+    'apple-touch-icon.png',
+    'android-chrome-192x192.png',
+    'android-chrome-512x512.png',
+    'logo.png',
+  ] as const) {
+    app.get(`/${filename}`, async (c, next) => {
+      const cfg = getSiteConfig()
+      if (cfg.iconMode === 'upload' && hasCustomIcon(filename)) {
+        try {
+          const data = readFileSync(getCustomIconPath(filename))
+          return new Response(data, {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/png',
+              'X-Content-Type-Options': 'nosniff',
+              'Cache-Control': 'public, max-age=86400',
+            },
+          })
+        } catch {
+          return next()
+        }
+      } else if (cfg.iconMode === 'url' && cfg.iconUrl) {
+        return c.redirect(cfg.iconUrl, 302)
+      }
+      return next()
+    })
+  }
+
+  // Dynamic webmanifest: keeps site branding and icon versioning fully in sync
+  app.get('/site.webmanifest', (c) => {
+    const cfg = getSiteConfig()
+    const ver = cfg.iconUpdatedAt ? `?v=${cfg.iconUpdatedAt}` : ''
+    const manifest = {
+      name: cfg.siteName || 'Animaku 动漫',
+      short_name: cfg.siteName || 'Animaku',
+      description: cfg.siteTagline
+        ? `${cfg.siteName || 'Animaku'} - ${cfg.siteTagline}`
+        : 'Animaku 动漫 - 在线高清动画多源聚合弹幕平台',
+      lang: 'zh-CN',
+      start_url: '/',
+      scope: '/',
+      icons: [
+        {
+          src: `/android-chrome-192x192.png${ver}`,
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: `/android-chrome-512x512.png${ver}`,
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any',
+        },
+      ],
+      theme_color: '#09090b',
+      background_color: '#09090b',
+      display: 'standalone',
+      orientation: 'any',
+      categories: ['entertainment', 'video'],
+    }
+    return new Response(JSON.stringify(manifest, null, 2), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/manifest+json; charset=utf-8',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    })
+  })
+
   app.use('*', async (c, next) => {
     if (c.req.path.startsWith('/api')) return next()
-    // Dynamic robots/llms/sitemap/subject and dynamically-injected HTML routes already handled
+    // Dynamic robots/llms/sitemap/manifest/subject and dynamically-injected HTML routes already handled
     if (
       c.req.path === '/' ||
       c.req.path === '/index.html' ||
       c.req.path === '/robots.txt' ||
       c.req.path === '/llms.txt' ||
       c.req.path === '/sitemap.xml' ||
+      c.req.path === '/site.webmanifest' ||
       c.req.path.startsWith('/subject/') ||
       c.req.path.startsWith('/play/')
     ) {
@@ -319,6 +397,7 @@ if (webRoot) {
       c.req.path === '/robots.txt' ||
       c.req.path === '/llms.txt' ||
       c.req.path === '/sitemap.xml' ||
+      c.req.path === '/site.webmanifest' ||
       c.req.path.startsWith('/subject/') ||
       c.req.path.startsWith('/play/')
     ) {

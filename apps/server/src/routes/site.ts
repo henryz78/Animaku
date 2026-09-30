@@ -181,7 +181,7 @@ adminSiteRoutes.post('/site/upload-icon', async (c) => {
       return c.json({ ok: false, error: check.error }, 400)
     }
 
-    saveCustomFavicon(buffer)
+    await saveCustomFavicon(buffer)
     const cfg = getSiteConfig()
 
     return c.json({

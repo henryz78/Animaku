@@ -126,24 +126,39 @@ export function updateDocumentFavicon(
   iconUpdatedAt?: number,
 ) {
   if (typeof document === 'undefined') return
-  let href = '/favicon.ico'
-  if (iconMode === 'upload' && iconUpdatedAt) {
-    href = `/api/site/favicon?v=${iconUpdatedAt}`
-  } else if (iconMode === 'url' && iconUrl) {
-    href = iconUrl
+
+  if (iconMode === 'url' && iconUrl) {
+    const existingIcons = document.querySelectorAll<HTMLLinkElement>(
+      "link[rel*='icon'], link[rel='apple-touch-icon']",
+    )
+    existingIcons.forEach((el) => {
+      el.href = iconUrl
+    })
+    return
   }
 
-  const existingIcons = document.querySelectorAll<HTMLLinkElement>("link[rel*='icon']")
-  if (existingIcons.length > 0) {
-    existingIcons.forEach((el) => {
-      el.href = href
-    })
-  } else {
-    const link = document.createElement('link')
-    link.rel = 'icon'
-    link.href = href
-    document.head.appendChild(link)
-  }
+  const v = iconUpdatedAt ? `?v=${iconUpdatedAt}` : ''
+  const links = document.querySelectorAll<HTMLLinkElement>(
+    "link[rel*='icon'], link[rel='apple-touch-icon'], link[rel='manifest']",
+  )
+
+  links.forEach((el) => {
+    const rawHref = el.getAttribute('href') || ''
+    const clean = rawHref.split('?')[0]
+    if (clean.endsWith('/favicon.ico')) {
+      el.href = `/favicon.ico${v}`
+    } else if (clean.endsWith('/favicon-32x32.png')) {
+      el.href = `/favicon-32x32.png${v}`
+    } else if (clean.endsWith('/favicon-16x16.png')) {
+      el.href = `/favicon-16x16.png${v}`
+    } else if (clean.endsWith('/apple-touch-icon.png')) {
+      el.href = `/apple-touch-icon.png${v}`
+    } else if (clean.endsWith('/android-chrome-192x192.png')) {
+      el.href = `/android-chrome-192x192.png${v}`
+    } else if (clean.endsWith('/site.webmanifest')) {
+      el.href = `/site.webmanifest${v}`
+    }
+  })
 }
 
 const initialSecret = getSavedAdminSecret()

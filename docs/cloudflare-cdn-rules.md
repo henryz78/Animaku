@@ -191,7 +191,7 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 - **规则名称**：`animaku-static-long-cache`
 - **匹配表达式 (Expression)**：
   ```text
-  (starts_with(http.request.uri.path, "/assets/") and http.request.uri.path.extension in {"js" "css" "woff2" "woff" "ttf" "png" "jpg" "jpeg" "webp" "svg" "ico" "map"})
+  (starts_with(http.request.uri.path, "/assets/") and http.request.uri.path.extension in {"js" "css" "woff2" "woff" "ttf" "png" "jpg" "jpeg" "webp" "svg" "map"})
   ```
 - **缓存设置**：
   - **缓存资格 (Cache Eligibility)**：`符合缓存条件 (Eligible for cache)`
@@ -239,7 +239,7 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 
 全系统（服务端 + CDN）已统一接入缓存穿透协议：
 - **主动刷新**：只要请求携带 `?refresh=1`、`?refresh=true` 或请求头 `Cache-Control: no-cache`，服务端 `setDanmakuCdnHeaders`、`setBangumiListCdnHeaders`、`setCommentsCdnHeaders`、`setRecommendationsCdnHeaders` 与 `ttl-cache` 会自动下发 `CDN-Cache-Control: no-store` 与 `Cloudflare-CDN-Cache-Control: no-store`，强制穿透边缘 CDN 并回源拉取最新鲜数据。
-- **网站图标 (Favicon) 缓存穿透**：系统在站长更换图标后，会自动向 HTML 的 `<link rel="icon">` 注入版本指纹参数（如 `/favicon.ico?v=1727500000`），保证访客秒级看到新图标。若因历史缓存滞后，亦可在 Cloudflare 控制台 -> **缓存 -> 配置 -> 自定义清除 (Purge by URL)** 中输入 `https://你的域名/favicon.ico` 立即秒级清除边缘单文件缓存。
+- **网站图标 (Favicon 与全尺寸多平台图标) 版本一致性与穿透**：系统采用“单图上传 → 服务端统一派生全套多尺寸图标（16×16、32×32、ICO、180×180、192×192、512×512）”架构。所有尺寸资源、HTML 模板引用及 `site.webmanifest` 动态清单共享同一个全局版本号 `?v=${iconVersion}`。在站长更换图标或重置官方默认时，所有尺寸的 URL 同时变为全新 Cache Key，保证访客与 CDN 秒级同步新图标，各端（PC 标签页、Retina、iOS Safari 桌面、Android PWA）均维持正常的高效缓存（`max-age=86400`），彻底消除新旧图标混用与多尺寸抢占残留。若需对裸根路径 `/favicon.ico` 强制清除历史遗留，亦可在 Cloudflare 控制台 -> **缓存 -> 配置 -> 自定义清除 (Purge by URL)** 中输入 `https://你的域名/favicon.ico` 立即秒级清除边缘单文件缓存。
 
 ---
 

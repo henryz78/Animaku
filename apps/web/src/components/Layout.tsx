@@ -615,11 +615,9 @@ export function Layout() {
           >
             <img
               src={
-                iconMode === 'upload' && iconUpdatedAt
-                  ? `/api/site/favicon?v=${iconUpdatedAt}`
-                  : iconMode === 'url' && iconUrl
-                    ? iconUrl
-                    : '/favicon-32x32.png'
+                iconMode === 'url' && iconUrl
+                  ? iconUrl
+                  : `/logo.png${iconUpdatedAt ? `?v=${iconUpdatedAt}` : ''}`
               }
               alt={b.productName}
               width={32}
