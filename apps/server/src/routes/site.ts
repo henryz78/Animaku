@@ -121,7 +121,8 @@ adminSiteRoutes.post('/site/config', async (c) => {
   if (body.iconUrl !== undefined) {
     const trimmed = typeof body.iconUrl === 'string' ? body.iconUrl.trim() : ''
     if (trimmed && !isValidHttpUrl(trimmed)) {
-      return c.json({ ok: false, error: '图标外链必须为以 http:// 或 https:// 开头的合法 URL' }, 400)
+      const msg = '图标外链必须为以 http:// 或 https:// 开头的合法 URL'
+      return c.json({ ok: false, error: msg, message: msg }, 400)
     }
     updates.iconUrl = trimmed.slice(0, 500)
   }
@@ -134,7 +135,8 @@ adminSiteRoutes.post('/site/config', async (c) => {
       message: '站点配置已更新',
     })
   } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : '保存失败' }, 500)
+    const errMsg = err instanceof Error ? err.message : '保存失败'
+    return c.json({ ok: false, error: errMsg, message: errMsg }, 500)
   }
 })
 
@@ -157,7 +159,7 @@ adminSiteRoutes.post('/site/upload-icon', async (c) => {
       }
 
       if (!file) {
-        return c.json({ ok: false, error: '未找到上传的图标文件 (file 字段)' }, 400)
+        return c.json({ ok: false, error: '未找到上传的图标文件 (file 字段)', message: '未找到上传的图标文件 (file 字段)' }, 400)
       }
 
       if (typeof (file as { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer === 'function') {
@@ -165,7 +167,7 @@ adminSiteRoutes.post('/site/upload-icon', async (c) => {
       } else if (typeof file === 'string') {
         buffer = Buffer.from(file, 'utf8')
       } else {
-        return c.json({ ok: false, error: '无法解析上传的文件内容' }, 400)
+        return c.json({ ok: false, error: '无法解析上传的文件内容', message: '无法解析上传的文件内容' }, 400)
       }
     } else {
       const ab = await c.req.arrayBuffer()
@@ -173,12 +175,13 @@ adminSiteRoutes.post('/site/upload-icon', async (c) => {
     }
 
     if (!buffer || buffer.length === 0) {
-      return c.json({ ok: false, error: '上传内容为空' }, 400)
+      return c.json({ ok: false, error: '上传内容为空', message: '上传内容为空' }, 400)
     }
 
     const check = validateIconBuffer(buffer)
     if (!check.valid) {
-      return c.json({ ok: false, error: check.error }, 400)
+      const errText = check.error || '非法图标文件'
+      return c.json({ ok: false, error: errText, message: errText }, 400)
     }
 
     await saveCustomFavicon(buffer)
@@ -191,7 +194,8 @@ adminSiteRoutes.post('/site/upload-icon', async (c) => {
       iconUpdatedAt: cfg.iconUpdatedAt,
     })
   } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : '图标上传保存失败' }, 500)
+    const errMsg = err instanceof Error ? err.message : '图标上传保存失败'
+    return c.json({ ok: false, error: errMsg, message: errMsg }, 500)
   }
 })
 
@@ -209,7 +213,8 @@ adminSiteRoutes.post('/site/reset-icon', (c) => {
       iconUpdatedAt: cfg.iconUpdatedAt,
     })
   } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : '重置失败' }, 500)
+    const errMsg = err instanceof Error ? err.message : '重置失败'
+    return c.json({ ok: false, error: errMsg, message: errMsg }, 500)
   }
 })
 
@@ -231,6 +236,7 @@ adminSiteRoutes.post('/site/reset-all', (c) => {
       },
     })
   } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : '全局重置失败' }, 500)
+    const errMsg = err instanceof Error ? err.message : '全局重置失败'
+    return c.json({ ok: false, error: errMsg, message: errMsg }, 500)
   }
 })

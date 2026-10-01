@@ -79,10 +79,18 @@ export async function api<T>(
     data = text
   }
   if (!res.ok) {
-    const msg =
-      (data && typeof data === 'object' && 'message' in data
-        ? String((data as { message: string }).message)
-        : null) || res.statusText || '请求失败'
+    let msg: string | null = null
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>
+      if (typeof obj.message === 'string' && obj.message.trim()) {
+        msg = obj.message.trim()
+      } else if (typeof obj.error === 'string' && obj.error.trim()) {
+        msg = obj.error.trim()
+      } else if (typeof obj.msg === 'string' && obj.msg.trim()) {
+        msg = obj.msg.trim()
+      }
+    }
+    msg = msg || res.statusText || '请求失败'
     if (
       res.status === 401 &&
       (init.token || /^\/api\/(bangumi\/(me|collections)|auth\/)/.test(path))

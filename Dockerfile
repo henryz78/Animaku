@@ -90,15 +90,18 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# Ensure data directory exists with correct permissions for non-root node user
-RUN mkdir -p /app/data && chown -R node:node /app/data
+# Ensure data directory exists with correct permissions and install gosu for non-root entrypoint
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gosu \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /app/data && chown -R node:node /app/data
 
-# Native modules (sharp) + bundled server JS + SPA assets
+# Native modules (sharp) + bundled server JS + SPA assets + entrypoint script
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/apps/server/dist/index.js ./dist/index.js
 COPY --from=build --chown=node:node /app/apps/web/dist ./public
-
-USER node
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 VOLUME ["/app/data"]
 
@@ -106,6 +109,9 @@ EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# Entrypoint automatically heals /app/data volume permissions and drops privileges to node user
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # cwd=/app so WEB_DIST=public and resolveWebRootRel finds ./public
 CMD ["node", "dist/index.js"]

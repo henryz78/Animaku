@@ -103,10 +103,26 @@ export function saveSiteConfig(updates: Partial<SiteConfig>): SiteConfig {
     if (!existsSync(config.dataDir)) {
       mkdirSync(config.dataDir, { recursive: true })
     }
-    writeFileSync(getSiteConfigFilePath(), JSON.stringify(next, null, 2), 'utf8')
+    const targetPath = getSiteConfigFilePath()
+    try {
+      writeFileSync(targetPath, JSON.stringify(next, null, 2), 'utf8')
+    } catch (writeErr) {
+      // 若因已有文件权限受限导致原地覆盖截断失败，尝试 unlink 后重新创建写入
+      if (existsSync(targetPath)) {
+        try {
+          unlinkSync(targetPath)
+          writeFileSync(targetPath, JSON.stringify(next, null, 2), 'utf8')
+        } catch {
+          throw writeErr
+        }
+      } else {
+        throw writeErr
+      }
+    }
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
     console.error('[site-config] 写入 site-config.json 失败:', err)
-    throw new Error('写入站点配置文件失败')
+    throw new Error(`写入站点配置文件失败 (${detail})`)
   }
 
   memoryCache = next
@@ -333,12 +349,32 @@ export async function saveCustomFavicon(buf: Buffer): Promise<void> {
   const suite = await generateIconSuite(buf)
 
   for (const filename of CUSTOM_ICON_FILENAMES) {
-    writeFileSync(resolve(iconsDir, filename), suite[filename])
+    const p = resolve(iconsDir, filename)
+    try {
+      writeFileSync(p, suite[filename])
+    } catch {
+      if (existsSync(p)) {
+        try {
+          unlinkSync(p)
+        } catch {}
+      }
+      writeFileSync(p, suite[filename])
+    }
   }
 
   // 兼容老路径 data/favicon.ico
   try {
-    writeFileSync(resolve(config.dataDir, 'favicon.ico'), suite['favicon.ico'])
+    const legacyFavicon = resolve(config.dataDir, 'favicon.ico')
+    try {
+      writeFileSync(legacyFavicon, suite['favicon.ico'])
+    } catch {
+      if (existsSync(legacyFavicon)) {
+        try {
+          unlinkSync(legacyFavicon)
+        } catch {}
+      }
+      writeFileSync(legacyFavicon, suite['favicon.ico'])
+    }
   } catch {}
 
   saveSiteConfig({

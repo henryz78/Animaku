@@ -1497,10 +1497,16 @@ function AdminPanelSection({
         await uploadIcon(selectedFile)
       }
 
+      // 若当前为官方默认图标且用户未选择新文件上传，保持 default 模式，不误将模式覆盖为 upload
+      const targetIconMode =
+        modeInput === 'upload' && !selectedFile && iconMode === 'default'
+          ? 'default'
+          : modeInput
+
       await saveConfig({
         siteName: nameInput,
         siteTagline: taglineInput,
-        iconMode: modeInput,
+        iconMode: targetIconMode,
         iconUrl: urlInput,
       })
 

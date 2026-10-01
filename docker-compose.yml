@@ -19,7 +19,7 @@ services:
     ports:
       - "${HOST:-0.0.0.0}:${PORT:-8787}:${PORT:-8787}"
 
-    # 持久化数据目录：保存 SQLite 数据库、缓存及自定义数据
+    # 持久化数据目录：保存 SQLite 数据库、缓存及自定义数据（容器启动脚本会自动检测并自愈权限为 node:node）
     volumes:
       - ./data:/app/data
 
