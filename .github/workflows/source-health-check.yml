@@ -1,0 +1,100 @@
+name: Video Sources & Metadata Health Check
+
+on:
+  # 1. 支持手动触发，并可指定运行的套件或特定视频源
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: '测试套件 (all, bgm, danmaku, sources)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - bgm
+          - danmaku
+          - sources
+      source:
+        description: '指定特定视频源 (例如: xifan-next, cycani, animoe; 为空则测试全部)'
+        required: false
+        default: ''
+        type: string
+      fast:
+        description: '开启快速模式 (跳过视频分片 64KB 下载)'
+        required: false
+        default: false
+        type: boolean
+
+  # 2. 定时巡检 (每天北京时间 08:00 / UTC 00:00 自动探活)
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  health-check:
+    name: Probe Sources & Services
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Sources & Metadata Prober
+        id: probe
+        env:
+          # 如在 GitHub Secrets 中配置了代理，可在此传入
+          HTTP_PROXY: ${{ secrets.PROBE_HTTP_PROXY }}
+          HTTPS_PROXY: ${{ secrets.PROBE_HTTPS_PROXY }}
+        run: |
+          CMD="pnpm test:sources --summary-file report.md --json-file probe-result.json"
+
+          if [ -n "${{ inputs.suite }}" ]; then
+            CMD="$CMD --suite ${{ inputs.suite }}"
+          fi
+
+          if [ -n "${{ inputs.source }}" ]; then
+            CMD="$CMD --source ${{ inputs.source }}"
+          fi
+
+          if [ "${{ inputs.fast }}" = "true" ]; then
+            CMD="$CMD --fast"
+          fi
+
+          echo "Executing: $CMD"
+          eval $CMD
+
+          # 将生成的 Markdown 报告渲染到 GitHub Actions Step Summary 界面
+          if [ -f "apps/server/report.md" ]; then
+            cat apps/server/report.md >> $GITHUB_STEP_SUMMARY
+          elif [ -f "report.md" ]; then
+            cat report.md >> $GITHUB_STEP_SUMMARY
+          fi
+        # 允许 CI 正常完成并将 Markdown 报告渲染到 GitHub Step Summary 看板中
+        continue-on-error: true
+
+      - name: Upload Health Check Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prober-health-reports
+          path: |
+            apps/server/report.md
+            apps/server/probe-result.json
+            report.md
+            probe-result.json
+          if-no-files-found: ignore
+          retention-days: 14

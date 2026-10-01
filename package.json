@@ -15,6 +15,7 @@
     "start:prod": "pnpm build && pnpm start",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
+    "test:sources": "pnpm --filter @animaku/server exec tsx ../../scripts/test-sources.ts",
     "benchmark:sources": "pnpm --filter @animaku/server exec tsx ../../scripts/benchmark-sources.mjs",
     "db": "node scripts/db-query.mjs",
     "db:migrate": "node scripts/migrate-play-stats.mjs",

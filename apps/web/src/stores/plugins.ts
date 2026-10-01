@@ -37,7 +37,8 @@ migrateLocalStorageKey('animaku-plugins', [
 /** v30: upgrade title preference from preferOriginalTitle boolean to titlePreference enum ('chinese', 'chinese_compact', 'original', 'traditional') */
 /** v32: tune default plugin weights (girigiri & mifun 70 > cycani 69, moonci 65 > tvtfun 64) and prioritize tvtfun road D */
 /** v33: add animoe (animoe.org) built-in with weight 58 (below lzizy 59) */
-export const PLUGIN_DEFAULTS_VERSION = 33
+/** v34: retire legacy xifan from default built-ins (superseded by xifan-next) */
+export const PLUGIN_DEFAULTS_VERSION = 34
 
 interface PluginState {
   plugins: PluginMeta[]
