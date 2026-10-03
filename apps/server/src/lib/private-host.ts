@@ -6,6 +6,20 @@ import dns from 'node:dns'
 import { fetch as undiciFetch, Agent, buildConnector } from 'undici'
 import { getDispatcherForSource } from './outbound-proxy'
 
+const workerRuntime = globalThis as typeof globalThis & {
+  __ANIMAKU_WORKER__?: boolean
+  __ANIMAKU_WORKER_ENV?: Record<string, string | undefined>
+}
+
+const WORKER_PROXY_HOSTS = new Set([
+  'api.bilibili.com',
+  'www.bilibili.com',
+  'animoe.org',
+  'www.animoe.org',
+  'tvtfun.net',
+  'www.tvtfun.net',
+])
+
 function stripBrackets(hostname: string): string {
   if (hostname.startsWith('[') && hostname.endsWith(']')) {
     return hostname.slice(1, -1)
@@ -291,6 +305,124 @@ export const safeDispatcher = new Agent({
   connect: createSafeConnector(),
 })
 
+/** Worker egress path: Cloudflare owns DNS/socket policy, so use native fetch. */
+async function fetchWorkerPublic(
+  input: string | URL,
+  init: RequestInit,
+  opts: { timeoutMs?: number; maxRedirects?: number },
+): Promise<Response> {
+  const timeoutMs = opts.timeoutMs ?? 20_000
+  const maxRedirects = opts.maxRedirects ?? 5
+  const callerRedirectMode = init.redirect ?? 'follow'
+  let current = typeof input === 'string' ? assertPublicHttpUrl(input) : new URL(input.toString())
+  let method = (init.method || 'GET').toUpperCase()
+  let body = init.body
+  const headers = new Headers(init.headers || {})
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const signal = init.signal || AbortSignal.timeout(timeoutMs)
+    const response = await fetch(current.toString(), {
+      ...init,
+      method,
+      body: method === 'GET' || method === 'HEAD' ? undefined : body,
+      headers,
+      redirect: 'manual',
+      signal,
+    })
+
+    // Cloudflare egress can be rejected by a small number of upstreams even
+    // when the same request succeeds from the official server. Retry only
+    // those fixed source hosts through the optional, authenticated fallback.
+    if (
+      (response.status === 403 || response.status === 412) &&
+      (method === 'GET' || method === 'HEAD') &&
+      WORKER_PROXY_HOSTS.has(current.hostname.toLowerCase())
+    ) {
+      const proxyResponse = await fetchWorkerFallback(current, headers, timeoutMs)
+      if (proxyResponse) {
+        await response.body?.cancel()
+        return proxyResponse
+      }
+    }
+
+    if (response.status < 300 || response.status >= 400) return response
+
+    const location = response.headers.get('location')
+    if (!location) return response
+    const next = new URL(location, current)
+    if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+      await response.body?.cancel()
+      throw new Error('重定向仅支持 http/https')
+    }
+    if (isPrivateHost(next.hostname)) {
+      await response.body?.cancel()
+      throw new Error('禁止重定向到内网地址')
+    }
+    if (callerRedirectMode === 'manual') return response
+    await response.body?.cancel()
+    if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
+      method = 'GET'
+      body = undefined
+    }
+    if (next.origin !== current.origin) {
+      headers.delete('authorization')
+      headers.delete('cookie')
+      headers.delete('host')
+    }
+    current = next
+  }
+  throw new Error(`超过最大重定向次数 (${maxRedirects})`)
+}
+
+async function fetchWorkerFallback(
+  target: URL,
+  requestHeaders: Headers,
+  timeoutMs: number,
+): Promise<Response | null> {
+  const env = workerRuntime.__ANIMAKU_WORKER_ENV || {}
+  const token = env.UPSTREAM_PROXY_TOKEN?.trim()
+  let base = env.UPSTREAM_PROXY_URL?.trim().replace(/\/+$/, '') || ''
+  if (!token || !base) return null
+
+  base = base.replace(/\/api\/(?:health|egress)$/i, '')
+  let endpoint: URL
+  try {
+    endpoint = new URL(`${base}/api/egress`)
+  } catch {
+    return null
+  }
+  if (endpoint.protocol !== 'https:' || isPrivateHost(endpoint.hostname)) return null
+
+  const forwarded: Record<string, string> = {}
+  for (const name of ['accept', 'accept-language', 'origin', 'referer']) {
+    const value = requestHeaders.get(name)
+    if (value && value.length <= 1024) forwarded[name] = value
+  }
+
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Egress-Token': token,
+      },
+      body: JSON.stringify({ url: target.toString(), headers: forwarded }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(Math.min(timeoutMs, 25_000)),
+    })
+  } catch {
+    return null
+  }
+
+  // A missing/misconfigured proxy must not replace the useful original error.
+  if (response.status === 400 || response.status === 401 || response.status === 404 || response.status === 405 || response.status === 503 || response.status >= 500) {
+    await response.body?.cancel()
+    return null
+  }
+  return response
+}
+
 /**
  * Fetch with safe public host boundary & RFC 9110 redirect pipeline.
  * - Enforces zero-leak socket release via res.body.cancel() before next hops.
@@ -311,6 +443,9 @@ export async function fetchPublic(
     source?: string
   } = {},
 ): Promise<Response> {
+  if ((globalThis as typeof globalThis & { __ANIMAKU_WORKER__?: boolean }).__ANIMAKU_WORKER__) {
+    return fetchWorkerPublic(input, init, opts)
+  }
   const timeoutMs = opts.timeoutMs ?? 20_000
   const maxRedirects = opts.maxRedirects ?? 5
   const callerRedirectMode = init.redirect ?? 'follow'

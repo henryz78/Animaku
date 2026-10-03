@@ -27,6 +27,11 @@ export const DEFAULT_KEY_TTL_SEC = 4 * 60 * 60 // 4 hours
 export const MAX_ASSETS_CAPACITY = 10_000
 export const MAX_REVOKED_JTI_CAPACITY = 20_000
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+function isWorkerRuntime() {
+  return Boolean(
+    (globalThis as typeof globalThis & { __ANIMAKU_WORKER__?: boolean }).__ANIMAKU_WORKER__,
+  )
+}
 
 /**
  * 敏感请求头清洗过滤，严防 Cookie 与 Authorization 注入公共请求头
@@ -340,6 +345,15 @@ export class PlaybackRegistry {
       typ: input.typ,
       sub: pathCheck.normalized,
       exp: nowSec + ttlSec,
+      asset: isWorkerRuntime()
+        ? {
+            baseUrl: asset.baseUrl,
+            trustLevel: asset.trustLevel,
+            publicHeaders: asset.publicHeaders,
+            encryptedCredentials: asset.encryptedCredentials,
+            expiresAt: asset.expiresAt,
+          }
+        : undefined,
     }
 
     return encryptTicketPayload(payload, this.key)
@@ -410,7 +424,21 @@ export class PlaybackRegistry {
     }
 
     // 7. 提取关联媒体资产
-    const asset = this.getAsset(payload.aid)
+    const asset = this.getAsset(payload.aid) ||
+      (isWorkerRuntime() && payload.asset?.baseUrl
+        ? {
+            assetId: payload.aid,
+            source: payload.src,
+            trustLevel: payload.asset.trustLevel,
+            status: 'active' as const,
+            baseUrl: payload.asset.baseUrl,
+            publicHeaders: sanitizePublicHeaders(payload.asset.publicHeaders),
+            encryptedCredentials: payload.asset.encryptedCredentials,
+            expiresAt: payload.asset.expiresAt,
+            createdAt: nowSec * 1000,
+            updatedAt: nowSec * 1000,
+          }
+        : null)
     if (!asset) {
       return {
         valid: false,

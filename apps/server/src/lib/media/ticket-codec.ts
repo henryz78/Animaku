@@ -6,9 +6,9 @@ import {
 } from 'node:crypto'
 import { posix } from 'node:path'
 import { config } from '../../config'
-import { kvCache } from '../../db/repositories/kv-cache'
 import {
   PLAYBACK_TICKET_AUDIENCE,
+  type PlaybackTicketAssetV1,
   type PlaybackTicketPayloadV1,
   type PlaybackTicketType,
 } from './playback-types'
@@ -23,6 +23,20 @@ export const MASTER_KEY_KV_KEY = 'media_system_master_key'
 
 // Singleton in-memory cache for authoritative master key
 let cachedMasterKey: Buffer | null = null
+
+type KvCacheLike = {
+  get: <T>(namespace: string, key: string) => T | null
+  set: (namespace: string, key: string, value: unknown) => unknown
+}
+
+const workerRuntime = Boolean(
+  (globalThis as typeof globalThis & { __ANIMAKU_WORKER__?: boolean }).__ANIMAKU_WORKER__,
+)
+let kvCache: KvCacheLike | null = null
+if (!workerRuntime) {
+  const db = await import('../../db/repositories/kv-cache')
+  kvCache = db.kvCache
+}
 
 /**
  * 派生标准的 32 字节 AES-256 密钥
@@ -47,7 +61,7 @@ export function getDefaultMediaKey(): Buffer {
 
   try {
     // 1. 查询 SQLite (kvCache) 中是否存在已持久化的系统主密钥
-    const persistedKeyHex = kvCache.get<string>(SYSTEM_KEY_NAMESPACE, MASTER_KEY_KV_KEY)
+    const persistedKeyHex = kvCache?.get<string>(SYSTEM_KEY_NAMESPACE, MASTER_KEY_KV_KEY)
     if (persistedKeyHex && typeof persistedKeyHex === 'string') {
       const buf = Buffer.from(persistedKeyHex, 'hex')
       if (buf.length === 32) {
@@ -70,7 +84,7 @@ export function getDefaultMediaKey(): Buffer {
 
   // 3. 将决断出的 Key 写入 SQLite 作为权威 master key，内存单例缓存
   try {
-    kvCache.set(SYSTEM_KEY_NAMESPACE, MASTER_KEY_KV_KEY, resolvedKey.toString('hex'))
+    kvCache?.set(SYSTEM_KEY_NAMESPACE, MASTER_KEY_KV_KEY, resolvedKey.toString('hex'))
   } catch {
     // 忽略初始化前写入异常
   }
@@ -300,7 +314,41 @@ export function decryptTicketPayload(
     throw new Error(`Unsafe sub path in decrypted payload: ${pathCheck.error}`)
   }
 
-  return {
+  let asset: PlaybackTicketAssetV1 | undefined
+  if (p.asset !== undefined) {
+    if (!p.asset || typeof p.asset !== 'object') {
+      throw new Error('Invalid asset snapshot')
+    }
+    const a = p.asset as Record<string, unknown>
+    if (
+      typeof a.baseUrl !== 'string' ||
+      !a.baseUrl ||
+      (a.trustLevel !== 'official' && a.trustLevel !== 'community' && a.trustLevel !== 'temporary') ||
+      typeof a.expiresAt !== 'number' ||
+      !Number.isFinite(a.expiresAt)
+    ) {
+      throw new Error('Invalid asset snapshot')
+    }
+    let publicHeaders: Record<string, string> | undefined
+    if (a.publicHeaders !== undefined) {
+      if (!a.publicHeaders || typeof a.publicHeaders !== 'object') throw new Error('Invalid asset headers')
+      publicHeaders = Object.fromEntries(
+        Object.entries(a.publicHeaders as Record<string, unknown>).filter(([, value]) => typeof value === 'string'),
+      ) as Record<string, string>
+    }
+    if (a.encryptedCredentials !== undefined && typeof a.encryptedCredentials !== 'string') {
+      throw new Error('Invalid asset credentials')
+    }
+    asset = {
+      baseUrl: a.baseUrl,
+      trustLevel: a.trustLevel,
+      publicHeaders,
+      encryptedCredentials: a.encryptedCredentials as string | undefined,
+      expiresAt: a.expiresAt,
+    }
+  }
+
+  const payload: PlaybackTicketPayloadV1 = {
     v: 1,
     aud: PLAYBACK_TICKET_AUDIENCE,
     jti: p.jti,
@@ -310,6 +358,8 @@ export function decryptTicketPayload(
     sub: pathCheck.normalized,
     exp: p.exp,
   }
+  if (asset) payload.asset = asset
+  return payload
 }
 
 /**

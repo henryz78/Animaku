@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "animaku",
+  "main": "./apps/server/src/worker.ts",
+  "compatibility_date": "2026-10-02",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  "assets": {
+    "directory": "./apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "animaku",
+      "database_id": "3c63301c-f370-4a1a-9a1a-223c9a81ff66",
+      "migrations_dir": "./apps/server/migrations"
+    }
+  ],
+  "vars": {
+    "APP_VERSION": "1.18.6",
+    "UPSTREAM_PROXY_URL": "https://animaku-egress-proxy.vercel.app"
+  }
+}

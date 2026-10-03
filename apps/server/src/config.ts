@@ -6,6 +6,16 @@ import {
   resolveBangumiImagePreset,
 } from '@animaku/shared'
 
+type RuntimeEnv = Record<string, string | undefined>
+const runtime = globalThis as typeof globalThis & {
+  __ANIMAKU_WORKER__?: boolean
+  __ANIMAKU_WORKER_ENV?: RuntimeEnv
+}
+const isWorkerRuntime = Boolean(runtime.__ANIMAKU_WORKER__)
+const env: RuntimeEnv = isWorkerRuntime
+  ? runtime.__ANIMAKU_WORKER_ENV || {}
+  : process.env
+
 function loadEnvFile(filePath: string) {
   if (!existsSync(filePath)) return
   const text = readFileSync(filePath, 'utf8')
@@ -22,15 +32,17 @@ function loadEnvFile(filePath: string) {
     ) {
       val = val.slice(1, -1)
     }
-    if (process.env[key] === undefined) process.env[key] = val
+    if (env[key] === undefined) env[key] = val
   }
 }
 
 // cwd is typically apps/server when running via pnpm filter
-loadEnvFile(resolve(process.cwd(), '../../.env'))
-loadEnvFile(resolve(process.cwd(), '.env'))
-loadEnvFile(resolve(import.meta.dirname, '../../../.env'))
-loadEnvFile(resolve(import.meta.dirname, '../../.env'))
+if (!isWorkerRuntime) {
+  loadEnvFile(resolve(process.cwd(), '../../.env'))
+  loadEnvFile(resolve(process.cwd(), '.env'))
+  loadEnvFile(resolve(import.meta.dirname, '../../../.env'))
+  loadEnvFile(resolve(import.meta.dirname, '../../.env'))
+}
 
 function envInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === '') return fallback
@@ -56,9 +68,10 @@ function parseCorsOrigins(raw: string | undefined): string[] {
 }
 
 function resolveDataDir(): string {
-  if (process.env.DATA_DIR?.trim()) {
-    return resolve(process.env.DATA_DIR.trim())
+  if (env.DATA_DIR?.trim()) {
+    return resolve(env.DATA_DIR.trim())
   }
+  if (isWorkerRuntime) return 'data'
   if (process.cwd().endsWith('apps/server') || process.cwd().endsWith('apps\\server')) {
     return resolve(process.cwd(), '../../data')
   }
@@ -66,7 +79,8 @@ function resolveDataDir(): string {
 }
 
 function resolveAppVersion(): string {
-  if (process.env.APP_VERSION?.trim()) return process.env.APP_VERSION.trim()
+  if (env.APP_VERSION?.trim()) return env.APP_VERSION.trim()
+  if (isWorkerRuntime) return 'v1.18.6'
   const candidatePaths = [
     resolve(process.cwd(), 'package.json'),
     resolve(process.cwd(), '../../package.json'),
@@ -86,9 +100,9 @@ function resolveAppVersion(): string {
 
 function resolveTimezone(): string {
   const raw = (
-    process.env.TZ ||
-    process.env.TIMEZONE ||
-    process.env.LOG_TIMEZONE ||
+    env.TZ ||
+    env.TIMEZONE ||
+    env.LOG_TIMEZONE ||
     'Asia/Shanghai'
   ).trim()
   return raw || 'Asia/Shanghai'
@@ -98,7 +112,7 @@ function resolveTimezone(): string {
  * 解析以 PROXY_ 或 OUTBOUND_PROXY_ 开头的代理池配置
  * 自动支持完整变量名（如 proxy_1、proxy_cn）及其标识符（如 1、cn、proxy1）
  */
-export function parseProxyPool(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export function parseProxyPool(env: RuntimeEnv = globalThisEnv()): Record<string, string> {
   const pool: Record<string, string> = {}
   for (const [key, val] of Object.entries(env)) {
     if (!val || typeof val !== 'string') continue
@@ -143,7 +157,7 @@ export function parseProxyPool(env: NodeJS.ProcessEnv = process.env): Record<str
  * 1. SOURCE_PROXY_MAP="cycani:proxy1,anime1:proxy2" 或 JSON 字符串 '{"cycani":"proxy1"}'
  * 2. 独立环境变量覆盖 SOURCE_PROXY_CYCANI=proxy1
  */
-export function parseSourceProxyMap(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export function parseSourceProxyMap(env: RuntimeEnv = globalThisEnv()): Record<string, string> {
   const map: Record<string, string> = {}
 
   const rawMap = (env.SOURCE_PROXY_MAP || env.SOURCE_PROXIES || '').trim()
@@ -191,9 +205,13 @@ const appVersion = resolveAppVersion()
 const cleanVersion = appVersion.replace(/^v/, '')
 const timezone = resolveTimezone()
 
+function globalThisEnv(): RuntimeEnv {
+  return env
+}
+
 // Ensure process.env.TZ is set so that standard Node.js APIs also respect the timezone
-if (!process.env.TZ) {
-  process.env.TZ = timezone
+if (!isWorkerRuntime && !env.TZ) {
+  env.TZ = timezone
 }
 
 export const config = {
@@ -206,57 +224,57 @@ export const config = {
    * 环境变量支持: DB_ENABLED / DATABASE_ENABLED (兼容历史 SQLITE_ENABLED)
    */
   dbEnabled: envBool(
-    process.env.DB_ENABLED ||
-      process.env.DATABASE_ENABLED ||
-      process.env.SQLITE_ENABLED,
+    env.DB_ENABLED ||
+      env.DATABASE_ENABLED ||
+      env.SQLITE_ENABLED,
     false,
   ),
   /**
    * 数据库驱动引擎类型（默认: 'sqlite'，预留未来扩展 postgres/mysql 等）
    */
-  dbDriver: (process.env.DB_DRIVER || 'sqlite').trim().toLowerCase(),
+  dbDriver: (env.DB_DRIVER || 'sqlite').trim().toLowerCase(),
   /** Full path to primary SQLite database file */
-  sqlitePath: process.env.SQLITE_PATH?.trim()
-    ? resolve(process.env.SQLITE_PATH.trim())
+  sqlitePath: env.SQLITE_PATH?.trim()
+    ? resolve(env.SQLITE_PATH.trim())
     : resolve(dataDir, 'animaku.db'),
   /** Enable SQLite Write-Ahead Logging (WAL) for concurrent read/write throughput */
-  sqliteWal: envBool(process.env.SQLITE_WAL, true),
+  sqliteWal: envBool(env.SQLITE_WAL, true),
   /** Busy timeout in ms before throwing SQLITE_BUSY */
-  sqliteBusyTimeout: envInt(process.env.SQLITE_BUSY_TIMEOUT, 5000),
+  sqliteBusyTimeout: envInt(env.SQLITE_BUSY_TIMEOUT, 5000),
   /** API listen port — `PORT` in root `.env` */
-  port: envInt(process.env.PORT, 8787),
+  port: envInt(env.PORT, 8787),
   /** API bind host — `HOST` in root `.env` */
-  host: process.env.HOST || '0.0.0.0',
+  host: env.HOST || '0.0.0.0',
   /**
    * Extra browser Origins allowed by CORS (comma-separated).
    * Always allows same-origin (no Origin) + localhost / 127.0.0.1 any port.
    * Set CORS_ORIGINS=* only if you intentionally want open cross-origin (not recommended).
    */
-  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
-  corsOpen: (process.env.CORS_ORIGINS || '').trim() === '*',
+  corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
+  corsOpen: (env.CORS_ORIGINS || '').trim() === '*',
   /**
    * Dedicated secret for signing and encrypting media playback tickets (AES-256-GCM).
    * Generates an ephemeral random master key if unset.
    */
   mediaSecret: (
-    process.env.MEDIA_SECRET ||
-    process.env.TICKET_SECRET ||
+    env.MEDIA_SECRET ||
+    env.TICKET_SECRET ||
     ''
   ).trim(),
-  dandanAppId: process.env.DANDAN_APP_ID || '',
-  dandanAppSecret: process.env.DANDAN_APP_SECRET || '',
+  dandanAppId: env.DANDAN_APP_ID || '',
+  dandanAppSecret: env.DANDAN_APP_SECRET || '',
   /**
    * Bangumi API User-Agent (required for non-browser clients; we set it always).
    * Format: developer/App[/version] (https://project-homepage)
    * @see https://bangumi.github.io/api/ — 非浏览器使用者须带个人 ID + 应用名；开源附主页
    */
   bangumiUserAgent:
-    process.env.BANGUMI_USER_AGENT ||
+    env.BANGUMI_USER_AGENT ||
     `uerax/Animaku/${cleanVersion} (https://github.com/uerax/Animaku)`,
   /** Product UA for APIs that expect an app identity (e.g. DanDanPlay) */
-  productUserAgent: process.env.PRODUCT_USER_AGENT || `Animaku/${cleanVersion}`,
+  productUserAgent: env.PRODUCT_USER_AGENT || `Animaku/${cleanVersion}`,
   defaultUserAgent:
-    process.env.DEFAULT_USER_AGENT ||
+    env.DEFAULT_USER_AGENT ||
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   /**
    * Bangumi API URL (e.g. https://bgmapi.anibt.net or https://api.bgm.tv).
@@ -264,51 +282,51 @@ export const config = {
    * Defaults to proxy https://bgmapi.anibt.net for CN-friendly out-of-the-box experience.
    */
   bangumiApi: toBangumiApiUrl(
-    process.env.BANGUMI_API ||
-      process.env.BANGUMI_API_HOST ||
-      process.env.VITE_BANGUMI_API_HOST,
+    env.BANGUMI_API ||
+      env.BANGUMI_API_HOST ||
+      env.VITE_BANGUMI_API_HOST,
   ),
   bangumiApiHost: resolveBangumiApiPreset(
-    process.env.BANGUMI_API ||
-      process.env.BANGUMI_API_HOST ||
-      process.env.VITE_BANGUMI_API_HOST,
+    env.BANGUMI_API ||
+      env.BANGUMI_API_HOST ||
+      env.VITE_BANGUMI_API_HOST,
   ),
   bangumiNextApi: (
-    process.env.BANGUMI_NEXT_API || 'https://next.bgm.tv'
+    env.BANGUMI_NEXT_API || 'https://next.bgm.tv'
   )
     .trim()
     .replace(/\/+$/, ''),
   bangumiImageHost: resolveBangumiImagePreset(
-    process.env.BANGUMI_IMAGE ||
-      process.env.BANGUMI_IMAGE_HOST ||
-      process.env.VITE_BANGUMI_IMAGE_HOST,
+    env.BANGUMI_IMAGE ||
+      env.BANGUMI_IMAGE_HOST ||
+      env.VITE_BANGUMI_IMAGE_HOST,
   ),
   dandanApi: 'https://api.dandanplay.net',
   /** KazumiRules primary + gitcode mirror (same as Kazumi ApiEndpoints) */
   pluginShop:
-    process.env.PLUGIN_SHOP ||
+    env.PLUGIN_SHOP ||
     'https://raw.githubusercontent.com/Predidit/KazumiRules/main/',
   pluginShopMirror:
-    process.env.PLUGIN_SHOP_MIRROR ||
+    env.PLUGIN_SHOP_MIRROR ||
     'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/',
   /** AniBakaRule primary + mirror (modern pipeline rules anx-rule/2) */
   anibakaShop:
-    process.env.ANIBAKA_SHOP ||
+    env.ANIBAKA_SHOP ||
     'https://raw.githubusercontent.com/AniBakaBaka/AniBakaRule/main/',
   anibakaShopMirror:
-    process.env.ANIBAKA_SHOP_MIRROR ||
+    env.ANIBAKA_SHOP_MIRROR ||
     'https://raw.githubusercontents.com/AniBakaBaka/AniBakaRule/main/',
   /**
    * Public site origin for sitemap / robots (no trailing slash).
    * e.g. https://anime.example.com — when empty, robots/sitemap use request Host.
    */
-  siteUrl: (process.env.SITE_URL || process.env.PUBLIC_SITE_URL || '')
+  siteUrl: (env.SITE_URL || env.PUBLIC_SITE_URL || '')
     .trim()
     .replace(/\/+$/, ''),
   /**
    * Server access log output format: 'pretty' (default human-friendly) | 'json' (structured JSONL for ELK/Loki)
    */
-  logFormat: (process.env.LOG_FORMAT || 'pretty').trim().toLowerCase() === 'json' ? ('json' as const) : ('pretty' as const),
+  logFormat: (env.LOG_FORMAT || 'pretty').trim().toLowerCase() === 'json' ? ('json' as const) : ('pretty' as const),
   /**
    * Timezone for server logs and timestamp formatting (e.g. 'Asia/Shanghai', 'UTC').
    * Configured via TZ, TIMEZONE, or LOG_TIMEZONE. Defaults to 'Asia/Shanghai'.
@@ -319,17 +337,17 @@ export const config = {
    * Key verification file is served at public/{INDEXNOW_KEY}.txt
    */
   indexnowKey: (
-    process.env.INDEXNOW_KEY || '4ddfeb9c68384dd99bc302fb0f02eaf1'
+    env.INDEXNOW_KEY || '4ddfeb9c68384dd99bc302fb0f02eaf1'
   ).trim(),
   /**
    * Dedicated Admin secret token for protected operations (e.g. POST /api/admin/indexnow).
    */
-  adminSecret: (process.env.ADMIN_SECRET || '').trim(),
+  adminSecret: (env.ADMIN_SECRET || '').trim(),
   /**
    * Enable/disable IndexNow automatic & manual submissions (default: false).
    * Must be explicitly set to 1/true in production .env to prevent local dev test leakage.
    */
-  indexnowEnabled: envBool(process.env.INDEXNOW_ENABLED, false),
+  indexnowEnabled: envBool(env.INDEXNOW_ENABLED, false),
   /**
    * 外部出站代理池（键名为归一化小写，如 proxy1, proxy_1, proxy_cn）
    */

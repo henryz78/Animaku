@@ -50,6 +50,19 @@ export interface PlaybackTicketPayloadV1 {
   sub: string
   /** 过期时间戳（秒级 Unix Timestamp） */
   exp: number
+  /**
+   * Worker 跨实例恢复资产所需的最小快照。整个 Ticket 已经使用 AES-GCM 加密，
+   * 因此这里可以安全携带上游地址、公共请求头和凭据密文。
+   */
+  asset?: PlaybackTicketAssetV1
+}
+
+export interface PlaybackTicketAssetV1 {
+  baseUrl: string
+  trustLevel: PlaybackAssetTrustLevel
+  publicHeaders?: Record<string, string>
+  encryptedCredentials?: string
+  expiresAt: number
 }
 
 /**
