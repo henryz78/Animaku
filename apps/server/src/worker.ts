@@ -1526,6 +1526,10 @@ function sanitizeAccountData(value: Record<string, unknown>): Record<string, unk
     if (!ACCOUNT_DATA_KEYS.has(key)) continue
     if (key === 'animaku-settings' && raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const settings = { ...(raw as Record<string, unknown>) }
+      if (settings.state && typeof settings.state === 'object' && !Array.isArray(settings.state)) {
+        settings.state = { ...(settings.state as Record<string, unknown>) }
+        delete (settings.state as Record<string, unknown>).bangumiToken
+      }
       delete settings.bangumiToken
       clean[key] = settings
     } else {

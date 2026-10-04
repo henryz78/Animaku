@@ -32,6 +32,11 @@ function sanitizeSettings(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
   const copy = { ...(value as Record<string, unknown>) }
   // Bangumi is a separate provider. Its access token must stay on-device.
+  if (copy.state && typeof copy.state === 'object' && !Array.isArray(copy.state)) {
+    const state = { ...(copy.state as Record<string, unknown>) }
+    delete state.bangumiToken
+    copy.state = state
+  }
   delete copy.bangumiToken
   return copy
 }
@@ -62,6 +67,28 @@ function dedupeArray(items: unknown[]): unknown[] {
   return result
 }
 
+function mergePersistedState(left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> {
+  const leftState = left.state
+  const rightState = right.state
+  if (!leftState || typeof leftState !== 'object' || Array.isArray(leftState) || !rightState || typeof rightState !== 'object' || Array.isArray(rightState)) {
+    return { ...right, ...left }
+  }
+  const mergedState = { ...(rightState as Record<string, unknown>), ...(leftState as Record<string, unknown>) }
+  for (const key of ['items', 'queries', 'plugins', 'pluginOrder']) {
+    const localItems = (leftState as Record<string, unknown>)[key]
+    const remoteItems = (rightState as Record<string, unknown>)[key]
+    if (Array.isArray(localItems) && Array.isArray(remoteItems)) mergedState[key] = dedupeArray([...remoteItems, ...localItems])
+  }
+  for (const key of ['records', 'bindings']) {
+    const localMap = (leftState as Record<string, unknown>)[key]
+    const remoteMap = (rightState as Record<string, unknown>)[key]
+    if (localMap && typeof localMap === 'object' && !Array.isArray(localMap) && remoteMap && typeof remoteMap === 'object' && !Array.isArray(remoteMap)) {
+      mergedState[key] = { ...(remoteMap as Record<string, unknown>), ...(localMap as Record<string, unknown>) }
+    }
+  }
+  return { ...right, ...left, state: mergedState }
+}
+
 /** Merge local and cloud state while keeping local settings/token precedence. */
 export function mergeCloudData(local: CloudData, remote: CloudData): CloudData {
   const merged: CloudData = {}
@@ -81,12 +108,10 @@ export function mergeCloudData(local: CloudData, remote: CloudData): CloudData {
     const right = remote[key]
     if (Array.isArray(left) && Array.isArray(right)) {
       merged[key] = dedupeArray([...right, ...left])
-    } else if (key === 'animaku-settings' && left && typeof left === 'object' && right && typeof right === 'object') {
-      // Local settings win, but remote settings fill keys introduced on a
-      // different device. Preserve the local-only Bangumi token as well.
-      merged[key] = { ...(right as Record<string, unknown>), ...(left as Record<string, unknown>) }
     } else if (left && typeof left === 'object' && right && typeof right === 'object' && !Array.isArray(left) && !Array.isArray(right)) {
-      merged[key] = { ...(right as Record<string, unknown>), ...(left as Record<string, unknown>) }
+      // Persisted Zustand stores keep user data under `state`; merge the
+      // collections/maps there instead of dropping another device's entries.
+      merged[key] = mergePersistedState(left as Record<string, unknown>, right as Record<string, unknown>)
     } else {
       merged[key] = left
     }
@@ -98,7 +123,25 @@ export function mergeCloudData(local: CloudData, remote: CloudData): CloudData {
 export function applyCloudData(data: CloudData, storage: Storage = window.localStorage): void {
   for (const key of CLOUD_DATA_KEYS) {
     if (!Object.prototype.hasOwnProperty.call(data, key)) continue
-    storage.setItem(key, JSON.stringify(sanitizeValue(key, data[key])))
+    let nextValue = sanitizeValue(key, data[key])
+    // Keep the locally stored Bangumi credential on this device while the
+    // rest of the settings are replaced by the merged cloud snapshot.
+    if (key === 'animaku-settings') {
+      const existing = parseStored(storage.getItem(key))
+      const currentState = existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? (existing as Record<string, unknown>).state
+        : undefined
+      if (currentState && typeof currentState === 'object' && !Array.isArray(currentState) && nextValue && typeof nextValue === 'object' && !Array.isArray(nextValue)) {
+        const next = { ...(nextValue as Record<string, unknown>) }
+        const nextState = next.state
+        if (nextState && typeof nextState === 'object' && !Array.isArray(nextState)) {
+          const token = (currentState as Record<string, unknown>).bangumiToken
+          if (typeof token === 'string' && token) next.state = { ...(nextState as Record<string, unknown>), bangumiToken: token }
+        }
+        nextValue = next
+      }
+    }
+    storage.setItem(key, JSON.stringify(nextValue))
   }
 }
 
