@@ -438,6 +438,21 @@ export function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [params] = useSearchParams()
+
+  // React Router keeps the document scroll position during client-side
+  // navigation. Reset it for actual page changes so opening a result from a
+  // long search/list page always starts at the top. Episode query changes on
+  // playback pages are intentionally excluded so switching episodes does not
+  // jump the player away from its current position.
+  const scrollResetKey =
+    location.pathname.startsWith('/subject/') ||
+    location.pathname.startsWith('/play/')
+      ? location.pathname
+      : `${location.pathname}${location.search}`
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [scrollResetKey])
+
   const showHistory = useSettingsStore(
     (s) => s.nav?.showHistory ?? defaultNavSettings.showHistory,
   )
