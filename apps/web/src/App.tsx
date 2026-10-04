@@ -1,8 +1,10 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { LoadingState } from './components/ui'
 import { routeImports } from './lib/route-preload'
+import { syncCloudData } from './lib/cloud-data'
+import { useAccountStore } from './stores/account'
 
 // Keep HomePage and NotFoundPage in the initial chunk for instantaneous render
 import { HomePage } from './pages/HomePage'
@@ -27,9 +29,38 @@ function PageFallback() {
   )
 }
 
+/** Keep the user's allow-listed local stores backed up while the app is open. */
+function AccountSyncBridge() {
+  const user = useAccountStore((state) => state.user)
+
+  useEffect(() => {
+    if (!user) return
+    let busy = false
+    const sync = async () => {
+      if (busy) return
+      busy = true
+      try { await syncCloudData() } catch { /* offline use remains fully functional */ }
+      finally { busy = false }
+    }
+    const timer = window.setInterval(() => void sync(), 60_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void sync()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [user])
+
+  return null
+}
+
 export default function App() {
   return (
-    <Routes>
+    <>
+      <AccountSyncBridge />
+      <Routes>
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route
@@ -106,6 +137,7 @@ export default function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   )
 }
