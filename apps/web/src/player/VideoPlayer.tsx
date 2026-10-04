@@ -536,6 +536,30 @@ export function VideoPlayer({
 
   // Gesture speed is temporary: it must not overwrite the user's saved speed.
   const temporarySpeedRef = useRef<number | null>(null)
+  const setTemporarySpeed = useCallback(
+    (speed: number) => {
+      const video = videoRef.current
+      if (!video) return
+      const wasPlaying = !video.paused
+      // WebKit and a few Android media stacks can emit a transient pause while
+      // changing playbackRate. Reuse the normal intent guard so that this
+      // transient rate-change event cannot make the player resync or roll back
+      // the visible progress when the gesture starts or ends.
+      withIntentGuard(450, () => {
+        try {
+          video.playbackRate = speed
+        } catch {
+          /* ignore engines that reject a rate change while loading */
+        }
+        if (wasPlaying) {
+          void video.play().catch(() => {
+            /* ignore autoplay rejection */
+          })
+        }
+      })
+    },
+    [videoRef, withIntentGuard],
+  )
   const startTemporarySpeed = useCallback(
     (speed: number) => {
       const video = videoRef.current
@@ -543,26 +567,17 @@ export function VideoPlayer({
       if (temporarySpeedRef.current === null) {
         temporarySpeedRef.current = video.playbackRate || player.speed || 1
       }
-      try {
-        video.playbackRate = speed
-      } catch {
-        /* ignore engines that reject a rate change while loading */
-      }
+      setTemporarySpeed(speed)
       flashSkipHint(`${speed} 倍速播放`, 900)
     },
-    [flashSkipHint, player.speed],
+    [flashSkipHint, player.speed, setTemporarySpeed, videoRef],
   )
   const stopTemporarySpeed = useCallback(() => {
-    const video = videoRef.current
     const restore = temporarySpeedRef.current
     temporarySpeedRef.current = null
-    if (!video || restore === null) return
-    try {
-      video.playbackRate = restore
-    } catch {
-      /* ignore */
-    }
-  }, [])
+    if (restore === null) return
+    setTemporarySpeed(restore)
+  }, [setTemporarySpeed])
   useEffect(() => () => stopTemporarySpeed(), [activeSrc, stopTemporarySpeed])
 
   const seekBy = useCallback(
