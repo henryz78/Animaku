@@ -32,6 +32,11 @@ import {
   useCustomOpedStore,
 } from '../lib/custom-oped-store'
 import { fetchBangumiOpedDetail } from '../lib/bangumi-oped'
+import {
+  createLocalDataBackup,
+  restoreLocalDataBackup,
+  serializeLocalDataBackup,
+} from '../lib/data-backup'
 
 /** Sort plugins by user-defined order, falling back to weight > alphabetical. */
 function sortPluginsByOrder(
@@ -142,6 +147,43 @@ export function SettingsPage() {
   const [tokenInput, setTokenInput] = useState(bangumiToken)
   const [tokenMsg, setTokenMsg] = useState('')
   const [pluginMsg, setPluginMsg] = useState('')
+  const [backupMsg, setBackupMsg] = useState('')
+  const backupFileRef = useRef<HTMLInputElement>(null)
+
+  const exportLocalData = useCallback(() => {
+    try {
+      const backup = createLocalDataBackup()
+      const blob = new Blob([serializeLocalDataBackup(backup)], {
+        type: 'application/json;charset=utf-8',
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `animaku-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setBackupMsg(`已导出 ${Object.keys(backup.entries).length} 项本地数据`)
+    } catch {
+      setBackupMsg('导出失败，请检查浏览器是否允许下载文件')
+    }
+  }, [])
+
+  const importLocalData = useCallback(async (file: File) => {
+    if (!window.confirm('导入备份会覆盖当前浏览器里的本地数据，并刷新页面。确定继续吗？')) {
+      return
+    }
+    try {
+      const count = restoreLocalDataBackup(await file.text())
+      setBackupMsg(`已导入 ${count} 项数据，正在刷新页面…`)
+      window.setTimeout(() => window.location.reload(), 300)
+    } catch (error) {
+      setBackupMsg(error instanceof Error ? error.message : '导入失败，请选择 Animaku 导出的备份文件')
+    } finally {
+      if (backupFileRef.current) backupFileRef.current.value = ''
+    }
+  }, [])
 
   useEffect(() => {
     setTokenInput(bangumiToken)
@@ -317,6 +359,7 @@ export function SettingsPage() {
     } catch {}
     // 默认展开高频核心项
     return {
+      'data-backup': true,
       'server-status': false,
       'image-host': false,
       'bangumi-token': true,
@@ -348,6 +391,7 @@ export function SettingsPage() {
       const targetState = !allOpen
       const next: Record<string, boolean> = {}
       for (const k of [
+        'data-backup',
         'server-status',
         'image-host',
         'bangumi-token',
@@ -393,7 +437,55 @@ export function SettingsPage() {
         </button>
       </div>
 
-      {/* 1. 服务状态 */}
+      {/* 1. 本地数据备份 */}
+      <CollapsibleSection
+        id="data-backup"
+        icon="💾"
+        title="本地数据备份"
+        summary="导入或导出浏览器数据"
+        isOpen={Boolean(openSections['data-backup'])}
+        onToggle={() => toggleSection('data-backup')}
+      >
+        <div className="space-y-3 text-xs leading-relaxed text-[var(--kz-fg-muted)] sm:text-sm">
+          <p>
+            将设置、观看历史、搜索记录、源绑定、插件规则和 OP/ED 标记保存为一个 JSON 文件，方便换浏览器或设备时恢复。
+            备份只包含本地数据，不包含临时缓存、服务器 D1 数据和站长密钥；如果已登录 Bangumi，文件可能包含登录凭据，请妥善保管。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportLocalData}
+              className="rounded-xl bg-[var(--kz-accent)] px-3 py-2 text-xs font-semibold text-white transition-colors hover:brightness-110"
+            >
+              导出我的数据
+            </button>
+            <button
+              type="button"
+              onClick={() => backupFileRef.current?.click()}
+              className="rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-2 text-xs font-semibold text-[var(--kz-fg)] transition-colors hover:border-[var(--kz-accent-ring)]"
+            >
+              导入备份文件
+            </button>
+            <input
+              ref={backupFileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void importLocalData(file)
+              }}
+            />
+          </div>
+          {backupMsg ? (
+            <p role="status" className="text-xs text-[var(--kz-accent)]">
+              {backupMsg}
+            </p>
+          ) : null}
+        </div>
+      </CollapsibleSection>
+
+      {/* 2. 服务状态 */}
       <CollapsibleSection
         id="server-status"
         icon="🖥️"
