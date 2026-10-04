@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CollectType } from '@animaku/shared'
+import { CollectType, coverOf } from '@animaku/shared'
 import { useWatchSession } from '../lib/use-watch-session'
 import { bangumiApi } from '../lib/bangumi'
 import { useSettingsStore } from '../stores/settings'
@@ -21,6 +21,7 @@ import { SourceBoard } from './watch/SourceBoard'
 import { WatchHudToast } from './watch/WatchHudToast'
 import { WatchRecommendations } from './watch/WatchRecommendations'
 import { WatchComments } from './watch/comments'
+import { BangumiMetadataPanel } from './watch/BangumiMetadataPanel'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { perfMetrics } from '../lib/performance-metrics'
 
@@ -587,6 +588,7 @@ export function WatchPage() {
       onPickSlot={(slot, rd) => startTransition(() => w.pickSlot(slot, rd))}
       onPickEpisode={(ep, rd) => startTransition(() => w.pickEpisode(ep, rd))}
       onRefreshChapters={() => startTransition(() => void w.refreshChapters())}
+      episodeFallbackImage={item ? coverOf(item, 'thumb') : undefined}
     />
   )
 
@@ -597,6 +599,8 @@ export function WatchPage() {
       bangumiItem={w.bangumiItem}
     />
   )
+
+  const metadataPanel = <BangumiMetadataPanel subjectId={bangumiId} />
 
   /* 番剧吐槽评论区（左侧 Meta 下方，带独立 ErrorBoundary 物理隔离） */
   const commentsPanel = Number.isFinite(bangumiId) && bangumiId > 0 ? (
@@ -617,6 +621,7 @@ export function WatchPage() {
       {sourcesPanel}
       {epsPanel}
       {recommendationsPanel}
+      {metadataPanel}
     </>
   )
 
@@ -638,6 +643,7 @@ export function WatchPage() {
           sources={sourcesPanel}
           episodes={epsPanel}
           recommendations={recommendationsPanel}
+          metadata={metadataPanel}
           comments={commentsPanel}
         />
       )}

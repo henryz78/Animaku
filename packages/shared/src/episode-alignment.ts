@@ -18,9 +18,14 @@ export interface AlignedEpisode {
 export interface BgmEpisodeLike {
   type: number
   sort: number
+  ep?: number
+  id?: number
   name?: string
   nameCn?: string
   name_cn?: string
+  aliases?: string[]
+  imageMedium?: string
+  imageLarge?: string
 }
 
 /**
@@ -40,6 +45,13 @@ export interface PlayableSlot {
   pageUrl: string
   /** Raw episode title string from video source (for tooltips / debug) */
   sourceTitle: string
+  /** Stable Bangumi episode identity when the authoritative list was available. */
+  officialEpisodeId?: number
+  /** Season-local episode number, kept separately from the continuous `canonicalEp`. */
+  officialEp?: number
+  /** Optional TMDB/upstream stills; UI must fall back when absent. */
+  imageMedium?: string
+  imageLarge?: string
   /** Whether this slot is operating in Layer 2 fallback / overflow / offline mode */
   isLayer2?: boolean
 }
@@ -67,11 +79,16 @@ export function filterOutObviousNonMainContent(
  */
 export function formatEpisodeDisplayTitle(
   canonicalEp: number,
-  _officialTitle?: string,
+  officialTitle?: string,
 ): string {
-  if (canonicalEp === 0) return '第00话'
-  if (canonicalEp > 0 && canonicalEp < 10) return `第0${canonicalEp}话`
-  return `第${canonicalEp}话`
+  const prefix =
+    canonicalEp === 0
+      ? '第00话'
+      : canonicalEp > 0 && canonicalEp < 10
+        ? `第0${canonicalEp}话`
+        : `第${canonicalEp}话`
+  const title = (officialTitle || '').trim()
+  return title ? `${prefix} ${title}` : prefix
 }
 
 const CHINESE_NUMS: Record<string, number> = {
@@ -222,6 +239,10 @@ export function buildPlayableSlots(
         sourceIndex: item.originalIndex,
         pageUrl,
         sourceTitle,
+        officialEpisodeId: bgm.id,
+        officialEp: bgm.ep,
+        imageMedium: bgm.imageMedium,
+        imageLarge: bgm.imageLarge,
         isLayer2: false,
       }
     })

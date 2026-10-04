@@ -117,6 +117,138 @@ export interface BangumiEpisode {
   ep?: number
   /** Server-parsed duration in seconds; 0 when unparseable */
   duration_seconds: number
+  /** Optional upstream still image; absent when no episode artwork is available. */
+  imageMedium?: string
+  imageLarge?: string
+  /** Extra source titles kept for cross-site episode matching. */
+  aliases?: string[]
+}
+
+export interface BangumiPerson {
+  id: number
+  name: string
+  nameCn: string
+  relation?: string
+  career?: string[]
+  image?: string
+}
+
+export interface BangumiCharacter {
+  id: number
+  name: string
+  nameCn: string
+  role?: string
+  image?: string
+  actors: BangumiPerson[]
+}
+
+export interface BangumiStaff {
+  id: number
+  name: string
+  nameCn: string
+  positions: string[]
+  image?: string
+}
+
+export interface BangumiRelation {
+  id: number
+  name: string
+  nameCn: string
+  relation: string
+  image?: string
+}
+
+export interface BangumiReview {
+  id: number | string
+  user: BangumiUser
+  content: string
+  score?: number
+  updatedAt: string
+  source: 'bangumi'
+}
+
+export interface BangumiSubjectMetadata {
+  characters: BangumiCharacter[]
+  staff: BangumiStaff[]
+  relations: BangumiRelation[]
+  reviews: BangumiReview[]
+  reviewsTotal: number
+  reviewsUnavailable?: boolean
+}
+
+function uniqueNonEmpty(values: Array<unknown>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    result.push(text)
+  }
+  return result
+}
+
+/**
+ * Return all known episode labels in stable preference order.  Matching uses
+ * this list only after numeric Bangumi identifiers, so a translated title
+ * cannot silently override a known `sort`/`ep` value.
+ */
+export function bangumiEpisodeNames(episode: BangumiEpisode): string[] {
+  return uniqueNonEmpty([
+    episode.nameCn,
+    episode.name,
+    ...(episode.aliases || []),
+  ])
+}
+
+export function bangumiEpisodeDisplayName(
+  episode: BangumiEpisode,
+  useOriginalTitle = false,
+): string {
+  const primary = useOriginalTitle ? episode.name : episode.nameCn
+  return primary?.trim() || episode.name?.trim() || episode.nameCn?.trim() || ''
+}
+
+/** Normalize punctuation/spacing for conservative cross-source title checks. */
+export function normalizeBangumiTitle(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[「」『』【】［］\[\]（）()]/g, '')
+    .replace(/[\s·・:：,，.!！?？'"“”‘’_\-]/g, '')
+}
+
+export type BangumiEpisodeTarget = {
+  sort?: number | null
+  ep?: number | null
+  names?: string[]
+}
+
+/**
+ * Match an external source episode without guessing across seasons:
+ * absolute Bangumi sort, then season-local ep, then normalized labels.
+ */
+export function matchBangumiEpisode(
+  episodes: BangumiEpisode[],
+  target: BangumiEpisodeTarget,
+): BangumiEpisode | undefined {
+  const main = episodes.filter((episode) => episode.type === 0)
+  const byNumber = (value: number | null | undefined, key: 'sort' | 'ep') =>
+    value == null || !Number.isFinite(value)
+      ? undefined
+      : main.find((episode) => Number(episode[key]) === Number(value))
+  const sortMatch = byNumber(target.sort, 'sort')
+  if (sortMatch) return sortMatch
+  const epMatch = byNumber(target.ep, 'ep')
+  if (epMatch) return epMatch
+
+  const names = new Set(
+    (target.names || []).map(normalizeBangumiTitle).filter(Boolean),
+  )
+  if (names.size === 0) return undefined
+  return main.find((episode) =>
+    bangumiEpisodeNames(episode).some((name) => names.has(normalizeBangumiTitle(name))),
+  )
 }
 
 export interface BangumiUser {

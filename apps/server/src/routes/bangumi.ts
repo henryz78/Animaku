@@ -17,9 +17,17 @@ import {
   type CommentItem,
   type CommentPagePayload,
   commentFilters,
+  type BangumiSubjectMetadata,
 } from '@animaku/shared'
 import { config } from '../config'
 import { bangumiFetch, getBearerToken } from '../lib/http'
+import {
+  mapBangumiCharacters,
+  mapBangumiRelations,
+  mapBangumiReviews,
+  mapBangumiStaff,
+  mapBangumiEpisode,
+} from '../lib/bangumi-metadata'
 import {
   setCommentsCdnHeaders,
   setBangumiListCdnHeaders,
@@ -531,18 +539,63 @@ bangumiRoutes.get('/subjects/:id/episodes', async (c) => {
     )
   }
   const json = (await res.json()) as { data?: Record<string, unknown>[]; total?: number }
-  const episodes: BangumiEpisode[] = (json.data || []).map((e) => ({
-    id: Number(e.id),
-    type: Number(e.type ?? 0),
-    sort: Number(e.sort ?? e.ep ?? 0),
-    name: String(e.name ?? ''),
-    nameCn: String(e.name_cn ?? ''),
-    airdate: String(e.airdate ?? ''),
-    ep: e.ep != null ? Number(e.ep) : undefined,
-    duration_seconds: Number(e.duration_seconds ?? 0),
-  }))
+  const episodes: BangumiEpisode[] = (json.data || []).map(mapBangumiEpisode)
   const payload = { data: episodes, total: json.total }
   cacheSet(key, payload, BANGUMI_CACHE_TTL.episodes)
+  setBangumiListCdnHeaders(c, bypass)
+  return c.json(payload, 200, cacheHeaders(false))
+})
+
+/**
+ * Read-only Bangumi metadata used by the watch page.  Each upstream section
+ * is independent so a missing character/person/review endpoint does not take
+ * down the rest of the subject page or video playback.
+ */
+bangumiRoutes.get('/subjects/:id/metadata', async (c) => {
+  const subjectId = Number(c.req.param('id'))
+  if (!Number.isInteger(subjectId) || subjectId <= 0) {
+    return c.json({ error: 'bad_request', message: '无效的 subjectId' }, 400)
+  }
+  const limit = Math.min(Math.max(Number(c.req.query('reviewsLimit')) || 20, 1), 50)
+  const offset = Math.max(Number(c.req.query('reviewsOffset')) || 0, 0)
+  const key = `bangumi:${apiHost}:metadata:${subjectId}:${limit}:${offset}`
+  const bypass = wantsCacheBypass(c)
+  if (bypass) cacheDelete(key)
+  else {
+    const hit = cacheGet<{ data: BangumiSubjectMetadata }>(key)
+    if (hit) return c.json(hit, 200, cacheHeaders(true))
+  }
+
+  const requests = await Promise.allSettled([
+    bangumiFetch(`${apiUrl}/v0/subjects/${subjectId}/characters`),
+    bangumiFetch(`${apiUrl}/v0/subjects/${subjectId}/persons`),
+    bangumiFetch(`${apiUrl}/v0/subjects/${subjectId}/subjects`),
+    bangumiFetch(`${config.bangumiNextApi}/p1/subjects/${subjectId}/reviews?limit=${limit}&offset=${offset}`),
+  ])
+
+  const readJson = async (result: PromiseSettledResult<Response>): Promise<unknown> => {
+    if (result.status !== 'fulfilled' || !result.value.ok) return null
+    try {
+      return await result.value.json()
+    } catch {
+      return null
+    }
+  }
+  const [charactersRaw, staffRaw, relationsRaw, reviewsRaw] = await Promise.all(
+    requests.map(readJson),
+  )
+  const reviews = mapBangumiReviews(reviewsRaw)
+  const payload = {
+    data: {
+      characters: mapBangumiCharacters(charactersRaw),
+      staff: mapBangumiStaff(staffRaw),
+      relations: mapBangumiRelations(relationsRaw),
+      reviews: reviews.data,
+      reviewsTotal: reviews.total,
+      reviewsUnavailable: reviewsRaw == null,
+    } satisfies BangumiSubjectMetadata,
+  }
+  cacheSet(key, payload, BANGUMI_CACHE_TTL.metadata)
   setBangumiListCdnHeaders(c, bypass)
   return c.json(payload, 200, cacheHeaders(false))
 })

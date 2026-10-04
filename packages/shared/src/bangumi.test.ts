@@ -6,6 +6,8 @@ import {
   estimateAirProgress,
   formatDoingCount,
   formatDoingLabel,
+  matchBangumiEpisode,
+  normalizeBangumiTitle,
   parseBangumiItem,
 } from './bangumi.ts'
 
@@ -153,5 +155,16 @@ test('parseBangumiItem & parseBangumiAliases: decodes HTML entities in name, nam
   assert.equal(item.nameCn, "Let's Go 怪奇组")
   assert.equal(item.summary, '测试简介 & \'剧情\' "前瞻"')
   assert.equal(item.alias[0], "Let's Go! 怪奇组")
+})
+
+test('episode matching prefers continuous sort, then season-local ep, then translated names', () => {
+  const episodes = [
+    { id: 11, type: 0, sort: 13, ep: 1, name: '第十三话', nameCn: '第一话', airdate: '', duration_seconds: 0 },
+    { id: 12, type: 0, sort: 14, ep: 2, name: '第十四话', nameCn: '第二话', airdate: '', duration_seconds: 0 },
+  ]
+  assert.equal(matchBangumiEpisode(episodes, { sort: 14, ep: 1 })?.id, 12)
+  assert.equal(matchBangumiEpisode(episodes, { sort: 99, ep: 2 })?.id, 12)
+  assert.equal(matchBangumiEpisode(episodes, { names: ['第二话'] })?.id, 12)
+  assert.equal(normalizeBangumiTitle(' 第二话：再见！ '), '第二话再见')
 })
 

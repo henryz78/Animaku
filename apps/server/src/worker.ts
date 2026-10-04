@@ -9,8 +9,16 @@ import {
   resolveCountryTag,
   toBangumiCollectionType,
   type BangumiItem,
+  type BangumiSubjectMetadata,
 } from '@animaku/shared'
 import type { PlaybackAsset } from './lib/media/playback-types'
+import {
+  mapBangumiCharacters,
+  mapBangumiEpisode,
+  mapBangumiRelations,
+  mapBangumiReviews,
+  mapBangumiStaff,
+} from './lib/bangumi-metadata'
 
 const runtime = globalThis as typeof globalThis & {
   __ANIMAKU_WORKER__?: boolean
@@ -361,23 +369,46 @@ app.get('/api/bangumi/subjects/:id/episodes', async (c) => {
     const { response, data } = await upstreamJson(`${bangumiApi(c)}/v0/episodes?subject_id=${id}&limit=200`, {}, bangumiUserAgent(c))
     if (!response.ok) return c.json(upstreamError(response, data), 502)
     const rows = Array.isArray(data) ? data : (data as { data?: unknown[] })?.data || []
-    const episodes = rows.map((row) => {
-      const value = row && typeof row === 'object' ? row as Record<string, unknown> : {}
-      return {
-        id: Number(value.id || 0),
-        type: Number(value.type || 0),
-        sort: Number(value.sort ?? value.ep ?? 0),
-        name: String(value.name || ''),
-        nameCn: String(value.name_cn || value.nameCn || ''),
-        airdate: String(value.airdate || ''),
-        ep: value.ep == null ? undefined : Number(value.ep),
-        duration_seconds: Number(value.duration_seconds || 0),
-      }
-    })
+    const episodes = rows.map(mapBangumiEpisode)
     return c.json({ data: episodes })
   } catch (error) {
     return c.json({ error: 'upstream', message: String(error) }, 502)
   }
+})
+
+app.get('/api/bangumi/subjects/:id/metadata', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: 'bad_request', message: '无效的 subjectId' }, 400)
+  }
+  const limit = Math.min(Math.max(Number(c.req.query('reviewsLimit')) || 20, 1), 50)
+  const offset = Math.max(Number(c.req.query('reviewsOffset')) || 0, 0)
+  const results = await Promise.allSettled([
+    upstreamJson(`${bangumiApi(c)}/v0/subjects/${id}/characters`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiApi(c)}/v0/subjects/${id}/persons`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiApi(c)}/v0/subjects/${id}/subjects`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiNextApi(c)}/p1/subjects/${id}/reviews?limit=${limit}&offset=${offset}`, {}, bangumiUserAgent(c)),
+  ])
+  const dataAt = (index: number): unknown => {
+    const result = results[index]
+    return result?.status === 'fulfilled' && result.value.response.ok ? result.value.data : null
+  }
+  const reviews = mapBangumiReviews(dataAt(3))
+  const metadata = {
+    characters: mapBangumiCharacters(dataAt(0)),
+    staff: mapBangumiStaff(dataAt(1)),
+    relations: mapBangumiRelations(dataAt(2)),
+    reviews: reviews.data,
+    reviewsTotal: reviews.total,
+    reviewsUnavailable: dataAt(3) == null,
+  } satisfies BangumiSubjectMetadata
+  return c.json(
+    { data: metadata },
+    200,
+    {
+      'Cache-Control': 'public, max-age=300, s-maxage=21600, stale-while-revalidate=86400',
+    },
+  )
 })
 
 function authorization(c: { req: { header: (name: string) => string | undefined } }) {

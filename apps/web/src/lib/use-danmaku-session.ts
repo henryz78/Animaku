@@ -16,6 +16,7 @@ import {
   parseDanmakuXml,
   deduplicateDanmakuIncremental,
   titleSimilarity,
+  normalizeBangumiTitle,
   type BangumiEpisode,
   type DanmakuAnime,
   type DanmakuComment,
@@ -122,6 +123,7 @@ function resolveDanmakuEpisode(
   const officialIndex = officialMain.findIndex((ep) => ep.sort === targetEpisode)
 
   if (officialIndex >= 0) {
+    const officialTarget = officialMain[officialIndex]
     // A real episode 0 is part of the positional sequence when the official
     // list starts at 0. Otherwise ignore a possible Dandan special/preview
     // numbered 0 so the first main episode still maps to position 0.
@@ -130,7 +132,36 @@ function resolveDanmakuEpisode(
       const parsed = parseEpisodeNumber(ep.episodeTitle).epNum
       return parsed !== null && Number.isFinite(parsed) && (includeZero || parsed >= 1)
     })
-    return positional[officialIndex] || (!positional.length ? episodes[officialIndex] : undefined)
+    const positionalMatch = positional[officialIndex] || (!positional.length ? episodes[officialIndex] : undefined)
+
+    // Some services keep a season-local number in the title while their list
+    // still contains an inserted special. Prefer that explicit local number
+    // only when it disagrees with the positional candidate; otherwise keep
+    // the established positional bridge for services that use global sort.
+    if (officialTarget?.ep != null) {
+      const localNumberMatch = matchDanmakuEpisode(episodes, officialTarget.ep)
+      const positionalNumber = positionalMatch
+        ? parseEpisodeNumber(positionalMatch.episodeTitle).epNum
+        : null
+      if (localNumberMatch && positionalNumber !== officialTarget.ep) {
+        return localNumberMatch
+      }
+    }
+
+    // Special episodes often have no reliable number. A unique translated or
+    // original title match is safer than silently attaching the next episode.
+    const specialNames = [officialTarget?.nameCn, officialTarget?.name]
+      .map((value) => normalizeBangumiTitle(value || ''))
+      .filter((value) => value.length >= 3)
+    if (specialNames.length > 0) {
+      const titleMatches = episodes.filter((candidate) => {
+        const normalized = normalizeBangumiTitle(candidate.episodeTitle)
+        return specialNames.some((name) => normalized.includes(name) || name.includes(normalized))
+      })
+      if (titleMatches.length === 1) return titleMatches[0]
+    }
+
+    return positionalMatch
   }
 
   // No official row for this target (offline metadata, manual offset, or a

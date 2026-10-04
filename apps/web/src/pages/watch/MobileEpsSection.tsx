@@ -16,6 +16,7 @@ type EpisodeItem = {
   canonicalEp: number
   title: string
   shortTitle: string
+  image?: string
   slot?: PlayableSlot
 }
 
@@ -59,6 +60,7 @@ export function MobileEpsSection({
   onPickSlot,
   onPickEpisode,
   onRefreshChapters,
+  episodeFallbackImage,
 }: {
   bangumiId?: number
   roads: MobileEpsRoad[]
@@ -83,6 +85,8 @@ export function MobileEpsSection({
   onPickSlot?: (slot: PlayableSlot, roadIndex: number) => void
   onPickEpisode: (epIndex: number, roadIndex: number) => void
   onRefreshChapters?: () => void
+  /** Subject cover used only when an episode has no dedicated still. */
+  episodeFallbackImage?: string
 }) {
   const watchedMap = useWatchedStore((s) =>
     bangumiId ? s.records[bangumiId] : undefined,
@@ -137,6 +141,7 @@ export function MobileEpsSection({
             canonicalEp: slot.canonicalEp,
             title: slot.displayTitle,
             shortTitle: String(slot.canonicalEp),
+            image: slot.imageMedium || slot.imageLarge || episodeFallbackImage,
             slot,
           })
         } else {
@@ -145,6 +150,7 @@ export function MobileEpsSection({
             canonicalEp: i + 1,
             title: activeRoad.identifier[i]?.trim() || String(i + 1),
             shortTitle: String(i + 1),
+            image: episodeFallbackImage,
           })
         }
       }
@@ -200,6 +206,7 @@ export function MobileEpsSection({
           canonicalEp: s.canonicalEp,
           title: s.displayTitle,
           shortTitle: String(s.canonicalEp),
+          image: s.imageMedium || s.imageLarge || episodeFallbackImage,
           slot: s,
         }))
       } else {
@@ -208,6 +215,7 @@ export function MobileEpsSection({
           canonicalEp: i + 1,
           title: name?.trim() || String(i + 1),
           shortTitle: String(i + 1),
+          image: episodeFallbackImage,
         }))
       }
       return isDescOrder ? items.reverse() : items
@@ -494,11 +502,21 @@ export function MobileEpsSection({
                   }}
                   title={watched ? `${item.title} · 已观看` : item.title}
                   className={clsx(
-                    'kz-watch-ep-card kz-bili-ep',
+                    'kz-watch-ep-card kz-bili-ep relative overflow-hidden',
                     playing && 'kz-bili-ep--playing',
                     watched && 'kz-bili-ep--watched',
                   )}
                 >
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-45"
+                    />
+                  ) : null}
+                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" aria-hidden />
                   {playing ? (
                     <span className="kz-bili-ep-bars" aria-hidden>
                       <i />
@@ -506,7 +524,7 @@ export function MobileEpsSection({
                       <i />
                     </span>
                   ) : null}
-                  <span className="kz-bili-ep-text">{item.title}</span>
+                  <span className="kz-bili-ep-text relative z-10">{item.title}</span>
                 </button>
               )
             })}

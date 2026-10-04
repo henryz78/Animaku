@@ -5,6 +5,7 @@ import type {
   BangumiUser,
   BangumiCollectionEntry,
   BangumiRecommendationsPayload,
+  BangumiSubjectMetadata,
   CommentPagePayload,
   CollectType,
 } from '@animaku/shared'
@@ -65,6 +66,19 @@ export const bangumiApi = {
     api<{ data: BangumiEpisode[] }>(`/api/bangumi/subjects/${id}/episodes`, {
       signal: opts?.signal,
     }),
+  metadata: (
+    id: number | string,
+    opts?: SignalOpt & { reviewsLimit?: number; reviewsOffset?: number },
+  ) => {
+    const query = new URLSearchParams()
+    if (opts?.reviewsLimit != null) query.set('reviewsLimit', String(opts.reviewsLimit))
+    if (opts?.reviewsOffset != null) query.set('reviewsOffset', String(opts.reviewsOffset))
+    const qs = query.toString()
+    return api<{ data: BangumiSubjectMetadata }>(
+      `/api/bangumi/subjects/${id}/metadata${qs ? `?${qs}` : ''}`,
+      { signal: opts?.signal },
+    )
+  },
   recommendations: (
     subjectId: number | string,
     opts?: {
