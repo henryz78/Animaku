@@ -49,7 +49,7 @@ export interface NavSettings {
   showHistory: boolean
   showThemeToggle: boolean
   showGitHub: boolean
-  /** 点击番剧卡片是否在新标签页打开（默认 true，方便淘番保留列表浏览进度） */
+  /** 点击番剧卡片是否在新标签页打开（默认当前页） */
   openInNewTab: boolean
 }
 
@@ -58,7 +58,7 @@ export const defaultNavSettings: NavSettings = {
   showHistory: envBool(import.meta.env.VITE_NAV_SHOW_HISTORY, true),
   showThemeToggle: envBool(import.meta.env.VITE_NAV_SHOW_THEME_TOGGLE, true),
   showGitHub: envBool(import.meta.env.VITE_NAV_SHOW_GITHUB, true),
-  openInNewTab: envBool(import.meta.env.VITE_NAV_OPEN_IN_NEW_TAB, true),
+  openInNewTab: envBool(import.meta.env.VITE_NAV_OPEN_IN_NEW_TAB, false),
 }
 
 interface SettingsState {
@@ -171,7 +171,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'animaku-settings',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const p = (persisted || {}) as Record<string, unknown>
         const player =
@@ -201,6 +201,11 @@ export const useSettingsStore = create<SettingsState>()(
           if (nav && 'showUserMenu' in nav) {
             delete nav.showUserMenu
           }
+        }
+        if (version < 4) {
+          // v3→v4: keep search and catalogue navigation in the current tab by default.
+          // The setting remains available when users explicitly want new tabs.
+          if (nav) nav.openInNewTab = false
         }
         return persisted as Record<string, unknown>
       },
