@@ -221,13 +221,14 @@ export async function insertUser(
   db: AccountDatabase,
   username: string,
   passwordHash: string,
+  role: 'user' | 'admin' = 'user',
 ): Promise<StoredUser> {
   const user: StoredUser = {
     id: crypto.randomUUID(),
     username,
     username_key: usernameKey(username),
     password_hash: passwordHash,
-    role: 'user',
+    role,
     disabled: 0,
     created_at: Date.now(),
   }

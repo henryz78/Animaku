@@ -36,6 +36,7 @@ import {
   readSessionToken,
   sessionCookie,
   toPublicUser,
+  usernameKey,
   validatePassword,
   validateUsername,
   verifyPassword,
@@ -70,6 +71,8 @@ type WorkerBindings = {
   ADMIN_SECRET?: string
   /** Username that is granted administrator access through the account session. */
   ADMIN_USERNAME?: string
+  /** Password for the configured administrator account; store as a Worker Secret. */
+  ADMIN_PASSWORD?: string
   BANGUMI_API?: string
   BANGUMI_NEXT_API?: string
   BANGUMI_USER_AGENT?: string
@@ -1407,6 +1410,15 @@ function accountDb(c: { env: WorkerBindings }): AccountDatabase | null {
   return c.env.DB ? (c.env.DB as unknown as AccountDatabase) : null
 }
 
+function configuredAdminUsername(env: WorkerBindings): string {
+  return normalizeUsername(env.ADMIN_USERNAME)
+}
+
+function configuredAdminPassword(env: WorkerBindings): string {
+  // Do not trim passwords: spaces may intentionally be part of a password.
+  return typeof env.ADMIN_PASSWORD === 'string' ? env.ADMIN_PASSWORD : ''
+}
+
 app.get('/api/account/me', async (c) => {
   const db = accountDb(c)
   if (!db) return c.json({ ok: true, user: null, available: false })
@@ -1431,6 +1443,9 @@ app.post('/api/account/register', async (c) => {
   if (usernameError) return c.json({ ok: false, error: 'invalid_username', message: usernameError }, 400)
   const passwordError = validatePassword(password)
   if (passwordError) return c.json({ ok: false, error: 'invalid_password', message: passwordError }, 400)
+  if (configuredAdminPassword(c.env) && usernameKey(username) === usernameKey(configuredAdminUsername(c.env))) {
+    return c.json({ ok: false, error: 'admin_account_reserved', message: '管理员账号请使用服务端配置的密码登录' }, 403)
+  }
   if (await findStoredUser(db, username)) {
     return c.json({ ok: false, error: 'username_taken', message: '用户名已被使用' }, 409)
   }
@@ -1456,6 +1471,38 @@ app.post('/api/account/login', async (c) => {
   const username = normalizeUsername(body.username)
   const password = typeof body.password === 'string' ? body.password : ''
   if (!username || !password) return c.json({ ok: false, error: 'invalid_credentials', message: '请输入用户名和密码' }, 400)
+
+  const adminUsername = configuredAdminUsername(c.env)
+  const adminPassword = configuredAdminPassword(c.env)
+  if (adminUsername && adminPassword && usernameKey(username) === usernameKey(adminUsername)) {
+    if (password !== adminPassword) {
+      return c.json({ ok: false, error: 'invalid_credentials', message: '用户名或密码错误' }, 401)
+    }
+    let admin = await findStoredUser(db, adminUsername)
+    if (!admin) {
+      try {
+        admin = await insertUser(db, adminUsername, await hashPassword(adminPassword), 'admin')
+      } catch (error) {
+        if (!String(error).toLowerCase().includes('unique')) throw error
+        admin = await findStoredUser(db, adminUsername)
+      }
+    }
+    if (!admin) return c.json({ ok: false, error: 'account_unavailable', message: '管理员账号初始化失败，请稍后重试' }, 503)
+    // The Worker Secret is the source of truth. If it changes, refresh the
+    // stored hash and restore the account's administrator role automatically.
+    if (admin.disabled || admin.role !== 'admin' || !(await verifyPassword(adminPassword, admin.password_hash))) {
+      const now = Date.now()
+      await db.prepare('UPDATE account_users SET password_hash = ?, role = ?, disabled = 0, updated_at = ? WHERE id = ?').bind(await hashPassword(adminPassword), 'admin', now, admin.id).run()
+      admin = await findStoredUser(db, adminUsername)
+    }
+    if (!admin) return c.json({ ok: false, error: 'account_unavailable', message: '管理员账号初始化失败，请稍后重试' }, 503)
+    const now = Date.now()
+    await db.prepare('UPDATE account_users SET last_login_at = ?, updated_at = ? WHERE id = ?').bind(now, now, admin.id).run()
+    const token = await createSession(db, admin.id, c.req.header('User-Agent'))
+    c.header('Set-Cookie', sessionCookie(token))
+    return c.json({ ok: true, user: toPublicUser(admin, c.env.ADMIN_USERNAME) })
+  }
+
   const user = await findStoredUser(db, username)
   if (!user || user.disabled || !(await verifyPassword(password, user.password_hash))) {
     return c.json({ ok: false, error: 'invalid_credentials', message: '用户名或密码错误' }, 401)

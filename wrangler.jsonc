@@ -26,7 +26,7 @@
     "ACCOUNT_REGISTRATION_ENABLED": "true",
     "ADMIN_USERNAME": "admin"
     // Set ADMIN_USERNAME in Cloudflare Worker Variables to the account that
-    // should receive automatic administrator access. It is intentionally not
-    // hard-coded in the repository.
+    // should receive automatic administrator access. Store ADMIN_PASSWORD
+    // with `wrangler secret put ADMIN_PASSWORD`; never commit the password.
   }
 }
