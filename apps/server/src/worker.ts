@@ -30,6 +30,7 @@ import {
   findStoredUser,
   hashPassword,
   insertUser,
+  isConfiguredAdminUsername,
   isRegistrationEnabled,
   normalizeUsername,
   readSessionToken,
@@ -67,6 +68,8 @@ type WorkerBindings = {
   ASSETS?: AssetBinding
   APP_VERSION?: string
   ADMIN_SECRET?: string
+  /** Username that is granted administrator access through the account session. */
+  ADMIN_USERNAME?: string
   BANGUMI_API?: string
   BANGUMI_NEXT_API?: string
   BANGUMI_USER_AGENT?: string
@@ -1408,7 +1411,7 @@ app.get('/api/account/me', async (c) => {
   const db = accountDb(c)
   if (!db) return c.json({ ok: true, user: null, available: false })
   try {
-    const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')))
+    const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')), c.env.ADMIN_USERNAME)
     return c.json({ ok: true, user, available: true })
   } catch (error) {
     return c.json({ ok: false, error: 'account_unavailable', message: error instanceof Error ? error.message : String(error) }, 503)
@@ -1435,7 +1438,7 @@ app.post('/api/account/register', async (c) => {
     const user = await insertUser(db, username, await hashPassword(password))
     const token = await createSession(db, user.id, c.req.header('User-Agent'))
     c.header('Set-Cookie', sessionCookie(token))
-    return c.json({ ok: true, user: toPublicUser(user) }, 201)
+    return c.json({ ok: true, user: toPublicUser(user, c.env.ADMIN_USERNAME) }, 201)
   } catch (error) {
     // A concurrent registration can win the unique constraint after the
     // preflight lookup; expose the same friendly error in that case.
@@ -1461,7 +1464,7 @@ app.post('/api/account/login', async (c) => {
   await db.prepare('UPDATE account_users SET last_login_at = ?, updated_at = ? WHERE id = ?').bind(now, now, user.id).run()
   const token = await createSession(db, user.id, c.req.header('User-Agent'))
   c.header('Set-Cookie', sessionCookie(token))
-  return c.json({ ok: true, user: toPublicUser(user) })
+  return c.json({ ok: true, user: toPublicUser(user, c.env.ADMIN_USERNAME) })
 })
 
 app.post('/api/account/logout', async (c) => {
@@ -1475,7 +1478,7 @@ app.post('/api/account/change-password', async (c) => {
   const db = accountDb(c)
   if (!db) return c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
   const token = readSessionToken(c.req.header('Cookie'))
-  const user = await findSessionUser(db, token)
+  const user = await findSessionUser(db, token, c.env.ADMIN_USERNAME)
   if (!user) return c.json({ ok: false, error: 'unauthorized', message: '请先登录' }, 401)
   const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
   const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
@@ -1505,7 +1508,7 @@ app.post('/api/account/change-password', async (c) => {
 async function requireAccountUser(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }): Promise<{ db: AccountDatabase; user: NonNullable<Awaited<ReturnType<typeof findSessionUser>>> } | null> {
   const db = c.env.DB ? (c.env.DB as unknown as AccountDatabase) : null
   if (!db) return null
-  const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')))
+  const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')), c.env.ADMIN_USERNAME)
   return user ? { db, user } : null
 }
 
@@ -1587,13 +1590,19 @@ app.put('/api/account/data', async (c) => {
   return c.json({ ok: true, version: saved?.version || 1, updatedAt: now })
 })
 
-function isAdmin(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }) {
-  return Boolean(c.env.ADMIN_SECRET && c.req.header('X-Admin-Secret') === c.env.ADMIN_SECRET)
+async function isAdmin(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }) {
+  // Keep the old header as a short-term compatibility path for scripts and
+  // existing self-hosted integrations. The web UI uses the account session.
+  if (c.env.ADMIN_SECRET && c.req.header('X-Admin-Secret') === c.env.ADMIN_SECRET) return true
+  const db = accountDb(c)
+  if (!db) return false
+  const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')), c.env.ADMIN_USERNAME)
+  return Boolean(user && (user.role === 'admin' || isConfiguredAdminUsername(user.username, c.env.ADMIN_USERNAME)))
 }
 
-app.post('/api/admin/verify', (c) => isAdmin(c) ? c.json({ ok: true }) : c.json({ ok: false, error: 'unauthorized' }, 401))
+app.post('/api/admin/verify', async (c) => (await isAdmin(c)) ? c.json({ ok: true }) : c.json({ ok: false, error: 'unauthorized' }, 401))
 app.get('/api/admin/accounts', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
   const result = await c.env.DB.prepare(
     `SELECT id, username, role, disabled, created_at, last_login_at
@@ -1611,14 +1620,14 @@ app.get('/api/admin/accounts', async (c) => {
   return c.json({ ok: true, users: (result.results || []).map((user) => ({
     id: user.id,
     username: user.username,
-    role: user.role,
+    role: user.role === 'admin' || isConfiguredAdminUsername(user.username, c.env.ADMIN_USERNAME) ? 'admin' : 'user',
     disabled: Boolean(user.disabled),
     createdAt: user.created_at,
     lastLoginAt: user.last_login_at || null,
   })) })
 })
 app.post('/api/admin/accounts/:id/status', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
   const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
   const disabled = Boolean(body.disabled)
@@ -1627,7 +1636,7 @@ app.post('/api/admin/accounts/:id/status', async (c) => {
   return c.json({ ok: true, disabled })
 })
 app.delete('/api/admin/accounts/:id', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
   const id = c.req.param('id')
   await c.env.DB.prepare('DELETE FROM account_sessions WHERE user_id = ?').bind(id).run()
@@ -1637,7 +1646,7 @@ app.delete('/api/admin/accounts/:id', async (c) => {
   return c.json({ ok: true })
 })
 app.post('/api/admin/site/config', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
   const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<string, unknown>
   const value = {
@@ -1651,14 +1660,17 @@ app.post('/api/admin/site/config', async (c) => {
   return c.json({ ok: true, data: value, message: '站点配置已更新' })
 })
 
-app.all('/api/admin/site/upload-icon', (c) => c.json({ ok: false, error: 'not_ready', message: '图标上传需要 R2，当前版本使用 Assets 默认图标' }, 501))
+app.all('/api/admin/site/upload-icon', async (c) => {
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  return c.json({ ok: false, error: 'not_ready', message: '图标上传需要 R2，当前版本使用 Assets 默认图标' }, 501)
+})
 app.post('/api/admin/site/reset-icon', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (c.env.DB) await c.env.DB.prepare('DELETE FROM site_config WHERE key = ?').bind('public').run()
   return c.json({ ok: true, ...defaultSiteConfig })
 })
 app.post('/api/admin/site/reset-all', async (c) => {
-  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (c.env.DB) await c.env.DB.prepare('DELETE FROM site_config WHERE key = ?').bind('public').run()
   return c.json({ ok: true, data: defaultSiteConfig })
 })

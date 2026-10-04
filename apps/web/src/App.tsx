@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { LoadingState } from './components/ui'
 import { routeImports } from './lib/route-preload'
@@ -56,11 +56,41 @@ function AccountSyncBridge() {
   return null
 }
 
+/** The cloud account is the entry ticket for every content route. */
+function RequireAccount() {
+  const location = useLocation()
+  const user = useAccountStore((state) => state.user)
+  const initialized = useAccountStore((state) => state.initialized)
+  const loading = useAccountStore((state) => state.loading)
+  const init = useAccountStore((state) => state.init)
+
+  useEffect(() => {
+    if (!initialized) void init()
+  }, [init, initialized])
+
+  if (!initialized || loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--kz-bg)] px-6 text-[var(--kz-fg)]">
+        <LoadingState text="正在检查登录状态…" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    const returnTo = `${location.pathname}${location.search}${location.hash}`
+    return <Navigate to={`/account?redirect=${encodeURIComponent(returnTo)}`} replace />
+  }
+
+  return <Outlet />
+}
+
 export default function App() {
   return (
     <>
       <AccountSyncBridge />
       <Routes>
+      <Route path="account" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
+      <Route element={<RequireAccount />}>
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route
@@ -112,14 +142,6 @@ export default function App() {
           }
         />
         <Route
-          path="account"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <AccountPage />
-            </Suspense>
-          }
-        />
-        <Route
           path="subject/:id"
           element={
             <Suspense fallback={<PageFallback />}>
@@ -136,6 +158,7 @@ export default function App() {
           }
         />
         <Route path="*" element={<NotFoundPage />} />
+      </Route>
       </Route>
       </Routes>
     </>

@@ -23,6 +23,10 @@
   "vars": {
     "APP_VERSION": "1.18.7",
     "UPSTREAM_PROXY_URL": "https://animaku-egress-proxy.vercel.app",
-    "ACCOUNT_REGISTRATION_ENABLED": "true"
+    "ACCOUNT_REGISTRATION_ENABLED": "true",
+    "ADMIN_USERNAME": "admin"
+    // Set ADMIN_USERNAME in Cloudflare Worker Variables to the account that
+    // should receive automatic administrator access. It is intentionally not
+    // hard-coded in the repository.
   }
 }

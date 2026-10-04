@@ -9,12 +9,11 @@ export interface SiteConfigState {
   iconUpdatedAt: number
   isLoaded: boolean
 
-  // 管理模式会话状态（仅当前会话有效）
-  adminSecret: string
+  // 管理模式会话状态（由当前账号的管理员权限自动验证）
   isAdminUnlocked: boolean
 
   fetchConfig: () => Promise<void>
-  unlockAdmin: (secret: string) => Promise<boolean>
+  unlockAdmin: () => Promise<boolean>
   lockAdmin: () => void
   saveConfig: (data: {
     siteName: string
@@ -28,7 +27,6 @@ export interface SiteConfigState {
   triggerIndexNow: () => Promise<{ ok: boolean; submitted?: number; message?: string }>
 }
 
-const ADMIN_STORAGE_KEY = 'animaku-admin-secret'
 const SITE_CONFIG_CACHE_KEY = 'animaku-site-config-cache'
 
 interface CachedSiteConfig {
@@ -102,24 +100,6 @@ function clearSiteConfigCache() {
   } catch {}
 }
 
-function getSavedAdminSecret(): string {
-  try {
-    return sessionStorage.getItem(ADMIN_STORAGE_KEY) || ''
-  } catch {
-    return ''
-  }
-}
-
-function saveAdminSecretToSession(secret: string) {
-  try {
-    if (secret) {
-      sessionStorage.setItem(ADMIN_STORAGE_KEY, secret)
-    } else {
-      sessionStorage.removeItem(ADMIN_STORAGE_KEY)
-    }
-  } catch {}
-}
-
 export function updateDocumentFavicon(
   iconMode: 'default' | 'upload' | 'url',
   iconUrl?: string,
@@ -161,7 +141,6 @@ export function updateDocumentFavicon(
   })
 }
 
-const initialSecret = getSavedAdminSecret()
 const initialConfig = getInitialSiteConfig()
 
 if (initialConfig.iconMode !== 'default' || initialConfig.iconUpdatedAt > 0) {
@@ -176,8 +155,7 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   iconUpdatedAt: initialConfig.iconUpdatedAt,
   isLoaded: false,
 
-  adminSecret: initialSecret,
-  isAdminUnlocked: Boolean(initialSecret),
+  isAdminUnlocked: false,
 
   fetchConfig: async () => {
     try {
@@ -213,24 +191,14 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
     }
   },
 
-  unlockAdmin: async (secret: string) => {
-    const trimmed = secret.trim()
-    if (!trimmed) return false
-
+  unlockAdmin: async () => {
     try {
       const res = await api<{ ok: boolean }>('/api/admin/verify', {
         method: 'POST',
-        headers: {
-          'X-Admin-Secret': trimmed,
-        },
       })
 
       if (res && res.ok) {
-        saveAdminSecretToSession(trimmed)
-        set({
-          adminSecret: trimmed,
-          isAdminUnlocked: true,
-        })
+        set({ isAdminUnlocked: true })
         return true
       }
       return false
@@ -240,15 +208,10 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   },
 
   lockAdmin: () => {
-    saveAdminSecretToSession('')
-    set({
-      adminSecret: '',
-      isAdminUnlocked: false,
-    })
+    set({ isAdminUnlocked: false })
   },
 
   saveConfig: async (data) => {
-    const { adminSecret } = get()
     const res = await api<{
       ok: boolean
       data: {
@@ -260,9 +223,6 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
       }
     }>('/api/admin/site/config', {
       method: 'POST',
-      headers: {
-        'X-Admin-Secret': adminSecret,
-      },
       body: JSON.stringify(data),
     })
 
@@ -281,7 +241,6 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   },
 
   uploadIcon: async (file: File) => {
-    const { adminSecret } = get()
     const formData = new FormData()
     formData.append('file', file)
 
@@ -291,9 +250,6 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
       iconUpdatedAt: number
     }>('/api/admin/site/upload-icon', {
       method: 'POST',
-      headers: {
-        'X-Admin-Secret': adminSecret,
-      },
       body: formData,
     })
 
@@ -316,16 +272,12 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   },
 
   resetIcon: async () => {
-    const { adminSecret } = get()
     const res = await api<{
       ok: boolean
       iconMode: 'default'
       iconUpdatedAt: number
     }>('/api/admin/site/reset-icon', {
       method: 'POST',
-      headers: {
-        'X-Admin-Secret': adminSecret,
-      },
     })
 
     if (res && res.ok) {
@@ -347,7 +299,6 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   },
 
   resetAllConfig: async () => {
-    const { adminSecret } = get()
     const res = await api<{
       ok: boolean
       data?: {
@@ -359,9 +310,6 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
       }
     }>('/api/admin/site/reset-all', {
       method: 'POST',
-      headers: {
-        'X-Admin-Secret': adminSecret,
-      },
     })
 
     if (res && res.ok) {
@@ -378,16 +326,12 @@ export const useSiteConfigStore = create<SiteConfigState>((set, get) => ({
   },
 
   triggerIndexNow: async () => {
-    const { adminSecret } = get()
     const res = await api<{
       ok: boolean
       submitted?: number
       message?: string
     }>('/api/admin/indexnow', {
       method: 'POST',
-      headers: {
-        'X-Admin-Secret': adminSecret,
-      },
       body: JSON.stringify({ forceAll: true }),
     })
     return res

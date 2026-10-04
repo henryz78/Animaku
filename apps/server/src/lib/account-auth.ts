@@ -68,11 +68,19 @@ async function sha256(value: string): Promise<string> {
   return bytesToHex(new Uint8Array(digest))
 }
 
-function toPublicUser(row: Pick<StoredUser, 'id' | 'username' | 'role' | 'created_at'>): AccountUser {
+export function isConfiguredAdminUsername(username: string, configuredUsername?: string): boolean {
+  const configured = normalizeUsername(configuredUsername)
+  return Boolean(configured && usernameKey(username) === usernameKey(configured))
+}
+
+function toPublicUser(
+  row: Pick<StoredUser, 'id' | 'username' | 'role' | 'created_at'>,
+  configuredAdminUsername?: string,
+): AccountUser {
   return {
     id: row.id,
     username: row.username,
-    role: row.role === 'admin' ? 'admin' : 'user',
+    role: row.role === 'admin' || isConfiguredAdminUsername(row.username, configuredAdminUsername) ? 'admin' : 'user',
     createdAt: row.created_at,
   }
 }
@@ -179,6 +187,7 @@ export async function createSession(
 export async function findSessionUser(
   db: AccountDatabase,
   token: string | null,
+  configuredAdminUsername?: string,
 ): Promise<AccountUser | null> {
   if (!token) return null
   const tokenHash = await sha256(token)
@@ -195,7 +204,7 @@ export async function findSessionUser(
   // This update is intentionally best-effort; a read should not fail because
   // a busy D1 replica could not update the activity timestamp.
   void db.prepare('UPDATE account_sessions SET last_seen_at = ? WHERE session_hash = ?').bind(Date.now(), tokenHash).run().catch(() => undefined)
-  return toPublicUser(row)
+  return toPublicUser(row, configuredAdminUsername)
 }
 
 export async function deleteSession(db: AccountDatabase, token: string | null): Promise<void> {

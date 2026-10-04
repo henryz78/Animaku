@@ -19,6 +19,7 @@ import {
 import { useSettingsStore } from '../stores/settings'
 import { isBuiltinPlugin, usePluginStore } from '../stores/plugins'
 import { useSiteConfigStore } from '../stores/site-config'
+import { useAccountStore } from '../stores/account'
 import { IconCropModal } from '../components/IconCropModal'
 import { PageHeader } from '../components/ui'
 import { getSiteBranding } from '../lib/site-branding'
@@ -1492,11 +1493,8 @@ function AdminPanelSection({
   const resetIcon = useSiteConfigStore((s) => s.resetIcon)
   const resetAllConfig = useSiteConfigStore((s) => s.resetAllConfig)
   const triggerIndexNow = useSiteConfigStore((s) => s.triggerIndexNow)
-  const adminSecret = useSiteConfigStore((s) => s.adminSecret)
+  const accountUser = useAccountStore((s) => s.user)
 
-  // 认证输入
-  const [secretInput, setSecretInput] = useState('')
-  const [showSecret, setShowSecret] = useState(false)
   const [authError, setAuthError] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
 
@@ -1548,22 +1546,18 @@ function AdminPanelSection({
     }
   }, [filePreview, cropModalData])
 
-  const handleUnlock = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    setAuthError('')
-    if (!secretInput.trim()) {
-      setAuthError('请输入管理员密钥')
+  useEffect(() => {
+    if (accountUser?.role !== 'admin') {
+      lockAdmin()
       return
     }
+    setAuthError('')
     setIsVerifying(true)
-    const success = await unlockAdmin(secretInput)
-    setIsVerifying(false)
-    if (!success) {
-      setAuthError('密钥错误或鉴权失败（请确认服务端 .env 已设置 ADMIN_SECRET）')
-    } else {
-      setSecretInput('')
-    }
-  }
+    void unlockAdmin().then((success) => {
+      if (!success) setAuthError('管理员账号验证失败，请检查服务端 ADMIN_USERNAME 配置')
+    }).finally(() => setIsVerifying(false))
+    return () => lockAdmin()
+  }, [accountUser?.id, accountUser?.role, lockAdmin, unlockAdmin])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -1687,7 +1681,6 @@ function AdminPanelSection({
     setAccountMsg('')
     try {
       const result = await api<{ ok: boolean; users: typeof accountUsers }>('/api/admin/accounts', {
-        headers: { 'X-Admin-Secret': adminSecret },
       })
       setAccountUsers(result.users || [])
     } catch (err) {
@@ -1705,7 +1698,6 @@ function AdminPanelSection({
     try {
       await api(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
         method: 'POST',
-        headers: { 'X-Admin-Secret': adminSecret },
         body: JSON.stringify({ disabled }),
       })
       setAccountUsers((users) => users.map((user) => user.id === id ? { ...user, disabled } : user))
@@ -1719,7 +1711,6 @@ function AdminPanelSection({
     try {
       await api(`/api/admin/accounts/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: { 'X-Admin-Secret': adminSecret },
       })
       setAccountUsers((users) => users.filter((user) => user.id !== id))
     } catch (err) {
@@ -1735,6 +1726,8 @@ function AdminPanelSection({
         ? iconUrl
         : '/logo.png')
 
+  if (accountUser?.role !== 'admin') return null
+
   return (
     <CollapsibleSection
       id="admin-panel"
@@ -1747,61 +1740,18 @@ function AdminPanelSection({
           </span>
         ) : (
           <span className="inline-flex items-center rounded-md border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--kz-fg-dim)]">
-            需口令
+            自动授权
           </span>
         )
       }
-      summary={isAdminUnlocked ? '站长模式已激活' : '需验证 ADMIN_SECRET'}
+      summary={isAdminUnlocked ? '已按管理员账号自动授权' : '正在验证管理员账号'}
       isOpen={isOpen}
       onToggle={onToggle}
     >
       <div className="space-y-5 p-4 sm:p-5 pt-0">
         {!isAdminUnlocked ? (
-          <div className="space-y-3 max-w-md">
-            <p className="text-xs text-[var(--kz-fg-dim)] leading-relaxed">
-              输入服务器环境变量中配置的 <code className="text-[var(--kz-accent)] font-semibold">ADMIN_SECRET</code> 口令以解锁站长管理权限。
-            </p>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  name="animaku_admin_key"
-                  id="animaku_admin_key"
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  data-lpignore="true"
-                  placeholder="请输入管理员密钥 (ADMIN_SECRET)"
-                  value={secretInput}
-                  onChange={(e) => setSecretInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleUnlock()
-                  }}
-                  className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] pl-3 pr-8 py-2 text-xs sm:text-sm text-[var(--kz-fg)] placeholder-[var(--kz-fg-dim)] outline-none focus:border-[var(--kz-accent)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((prev) => !prev)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--kz-fg-dim)] hover:text-[var(--kz-fg)] text-xs select-none"
-                  title={showSecret ? '隐藏密码' : '显示密码'}
-                  tabIndex={-1}
-                >
-                  {showSecret ? '🙈' : '👁️'}
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleUnlock()}
-                disabled={isVerifying}
-                className="inline-flex items-center justify-center rounded-xl bg-[var(--kz-accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[var(--kz-accent-hover)] active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
-              >
-                {isVerifying ? '验证中…' : '解锁管理'}
-              </button>
-            </div>
-            {authError && <p className="text-xs text-rose-400">{authError}</p>}
+          <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-200">
+            {isVerifying ? '正在验证当前账号的管理员权限…' : authError || '当前账号没有通过管理员验证。请检查服务端 ADMIN_USERNAME 是否与登录用户名一致。'}
           </div>
         ) : (
           <div className="space-y-6">
@@ -2013,16 +1963,9 @@ function AdminPanelSection({
               {accountMsg && <p className="text-xs text-[var(--kz-fg-muted)]">{accountMsg}</p>}
             </div>
 
-            {/* 退出管理 */}
-            <div className="pt-3 border-t border-[var(--kz-border)]/40 flex justify-end">
-              <button
-                type="button"
-                onClick={lockAdmin}
-                className="text-xs text-[var(--kz-fg-dim)] hover:text-rose-400 transition-colors"
-              >
-                退出管理模式
-              </button>
-            </div>
+            <p className="pt-3 border-t border-[var(--kz-border)]/40 text-[11px] text-[var(--kz-fg-dim)]">
+              管理权限跟随当前账号会话，退出登录后会自动失效。
+            </p>
           </div>
         )}
       </div>

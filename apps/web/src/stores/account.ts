@@ -36,8 +36,9 @@ export const useAccountStore = create<AccountState>((set) => ({
         const result = await api<{ ok: boolean; user: AccountUser | null; available?: boolean }>('/api/account/me')
         set({ user: result.user || null, available: result.available !== false, initialized: true })
       } catch {
-        // Account support is optional for existing deployments. A failed
-        // probe must never prevent anonymous browsing or Bangumi auth.
+        // The account is now the entry point for the application. Keep the
+        // failure visible on the login screen instead of silently falling
+        // back to an anonymous session.
         set({ user: null, available: false, initialized: true })
       } finally {
         set({ loading: false })
