@@ -258,6 +258,8 @@ bangumiRoutes.get('/trending', async (c) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // 特殊处理说明：Bangumi v0 检索接口规定 keyword 为必填项，纯过滤查询必须传递 '*' 通配符
+          keyword: '*',
           sort: 'heat',
           filter: {
             type: [Number(type) || 2],
@@ -388,7 +390,8 @@ bangumiRoutes.post('/search', async (c) => {
     .filter((n) => Number.isFinite(n) && n > 0)
   const finalTypes = types.length > 0 ? types : [2, 6]
 
-  const keyword = body.keyword || ''
+  const rawKeyword = body.keyword || ''
+  const keyword = rawKeyword.trim()
   const resultSort = sortByDate ? 'date' : upstreamSort
   const key = browseCacheKey({
     apiHost,
@@ -421,8 +424,13 @@ bangumiRoutes.post('/search', async (c) => {
     filter.rank = ['>=0', '<=99999']
   }
 
+  // 特殊处理说明：
+  // 遵循 Bangumi v0 检索接口规范，POST /v0/search/subjects 的 keyword 为必填字段。
+  // 对于无关键词的纯标签/分类泛查询（如剧场版/OVA/按年份筛选），必须传递 '*' 通配符以保证检索兼容性。
+  const upstreamKeyword = keyword.length > 0 ? keyword : '*'
+
   const params = {
-    keyword,
+    keyword: upstreamKeyword,
     sort: upstreamSort,
     filter,
   }
