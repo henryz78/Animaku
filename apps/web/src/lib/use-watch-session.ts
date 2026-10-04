@@ -420,6 +420,31 @@ export function useWatchSession(bangumiId: number): WatchSession {
     })
   }, [allPlugins, pluginOrder, isOld])
   const queryClient = useQueryClient()
+
+  /**
+   * Load the authoritative Bangumi episode list before resolving an explicit
+   * episode deep-link.  On a fresh reload the source chapters often finish
+   * first; using the source array as a positional fallback at that point can
+   * turn a canonical episode such as 72 into the source's last item.
+   */
+  const loadOfficialEpisodes = useCallback(async () => {
+    const cached = bgmEpisodesQuery.data?.data
+    if (cached !== undefined) return cached
+    try {
+      const result = await queryClient.ensureQueryData({
+        queryKey: ['bangumi-episodes', bangumiId],
+        queryFn: ({ signal }) => bangumiApi.episodes(bangumiId, { signal }),
+        staleTime: 60 * 60_000,
+        gcTime: 6 * 60 * 60_000,
+      })
+      return result.data
+    } catch {
+      // If Bangumi is temporarily unavailable, let the source metadata decide
+      // when it contains an explicit episode number; never invent a last item.
+      return null
+    }
+  }, [bangumiId, bgmEpisodesQuery.data?.data, queryClient])
+
   const upsertHistory = useHistoryStore((s) => s.upsert)
   const danmakuSettings = useSettingsStore((s) => s.danmaku ?? FALLBACK_DANMAKU)
   const setDanmaku = useSettingsStore((s) => s.setDanmaku)
@@ -790,7 +815,11 @@ export function useWatchSession(bangumiId: number): WatchSession {
         }
 
         const targetRoad = roads[targetRoadIdx] || roads[0]
-        const bgmEps = bgmEpisodesQuery.data?.data
+        const bgmEps =
+          !prevEpisode && qEp !== undefined && qEp >= 0
+            ? await loadOfficialEpisodes()
+            : bgmEpisodesQuery.data?.data
+        if (!isWatchPage() || chaptersGen.current !== gen) return
         const roadSlots = buildPlayableSlots(targetRoad, bgmEps)
         let targetSlot: PlayableSlot | null = null
 
@@ -822,8 +851,13 @@ export function useWatchSession(bangumiId: number): WatchSession {
           // Explicit deep-link episode specified in URL (e.g. ?ep=0 or ?ep=1)
           targetSlot = roadSlots.find((s) => s.canonicalEp === qEp) ?? null
           if (!targetSlot && roadSlots.length > 0) {
-            const fallbackIdx = Math.max(0, Math.min(qEp === 0 ? 0 : qEp - 1, roadSlots.length - 1))
-            targetSlot = roadSlots[fallbackIdx] || roadSlots[0]
+            const fallbackIdx = qEp === 0 ? 0 : qEp - 1
+            // Only use a positional fallback when the requested number is
+            // actually inside the source array.  Clamping 72 to an 11-item
+            // array is what previously selected the season finale.
+            if (fallbackIdx >= 0 && fallbackIdx < roadSlots.length) {
+              targetSlot = roadSlots[fallbackIdx]
+            }
           }
         }
 
@@ -898,7 +932,9 @@ export function useWatchSession(bangumiId: number): WatchSession {
             safeSetParams(q, { replace: true })
           }
         } else {
-          // Do not auto-request first episode when opening subject page without explicit ?ep
+          // Do not auto-request first episode when opening subject page without explicit ?ep.
+          // Keep an explicit deep-link in the URL if the source did not expose
+          // a matching item; deleting it would make a later retry lose intent.
           setEpisode(null)
           setResumePosition(0)
           resumeOverrideRef.current = null
@@ -907,7 +943,7 @@ export function useWatchSession(bangumiId: number): WatchSession {
             q.set('plugin', plugin.name)
           }
           q.delete('pageUrl')
-          q.delete('ep')
+          if (qEp === undefined) q.delete('ep')
           q.delete('road')
           q.delete('source')
           safeSetParams(q, { replace: true })
@@ -935,6 +971,7 @@ export function useWatchSession(bangumiId: number): WatchSession {
       cover,
       dmResetPools,
       isWatchPage,
+      loadOfficialEpisodes,
       resumePosition,
       safeSetParams,
       title,
@@ -1342,6 +1379,17 @@ export function useWatchSession(bangumiId: number): WatchSession {
       currentSel.plugin.name.toLowerCase() === qPlugin.toLowerCase() &&
       currentSel.roads.length > 0
     ) {
+      // A canonical episode number cannot be mapped safely until Bangumi's
+      // official list has finished loading. Wait instead of treating it as a
+      // source-array index, which can select the final source item.
+      if (
+        !qPageUrl &&
+        qEp !== undefined &&
+        bgmEpisodesQuery.data?.data === undefined &&
+        !bgmEpisodesQuery.isFetched
+      ) {
+        return
+      }
       resumeDoneFor.current = key
       setRoadError('')
       const roadIdx = Math.max(0, Math.min(qRoad, currentSel.roads.length - 1))
@@ -1361,11 +1409,14 @@ export function useWatchSession(bangumiId: number): WatchSession {
       }
 
       if (!targetSlot && slots.length > 0) {
-        const fallbackIdx =
-          qEp !== undefined && qEp >= 0
-            ? Math.max(0, Math.min(qEp === 0 ? 0 : qEp - 1, slots.length - 1))
-            : 0
-        targetSlot = slots[fallbackIdx] || slots[0]
+        if (qEp !== undefined && qEp >= 0) {
+          const fallbackIdx = qEp === 0 ? 0 : qEp - 1
+          if (fallbackIdx >= 0 && fallbackIdx < slots.length) {
+            targetSlot = slots[fallbackIdx]
+          }
+        } else {
+          targetSlot = slots[0]
+        }
       }
 
       if (targetSlot) {
@@ -1490,7 +1541,8 @@ export function useWatchSession(bangumiId: number): WatchSession {
         }
         let roadIdx = Math.max(0, qRoad)
         const targetRoad = roads[roadIdx] || roads[0]
-        const bgmEps = bgmEpisodesQuery.data?.data
+        const bgmEps = await loadOfficialEpisodes()
+        if (cancelled) return
         const slots = buildPlayableSlots(targetRoad, bgmEps)
         let targetSlot: PlayableSlot | undefined
 
@@ -1505,11 +1557,37 @@ export function useWatchSession(bangumiId: number): WatchSession {
         }
 
         if (!targetSlot && slots.length > 0) {
-          const fallbackIdx =
-            qEp !== undefined && qEp >= 0
-              ? Math.max(0, Math.min(qEp === 0 ? 0 : qEp - 1, slots.length - 1))
-              : 0
-          targetSlot = slots[fallbackIdx] || slots[0]
+          if (qEp !== undefined && qEp >= 0) {
+            const fallbackIdx = qEp === 0 ? 0 : qEp - 1
+            if (fallbackIdx >= 0 && fallbackIdx < slots.length) {
+              targetSlot = slots[fallbackIdx]
+            }
+          } else {
+            targetSlot = slots[0]
+          }
+        }
+
+        // Do not silently turn an explicit episode into the first one when
+        // neither the source title nor official metadata can identify it.
+        if (!targetSlot && qEp !== undefined && !qPageUrl) {
+          setSelection({ plugin, source, roads })
+          setVisibleRoad(roadIdx)
+          setRoadError('续播：暂时无法定位该集，请稍后重试或手动选择')
+          setEpisode(null)
+          setResumePosition(0)
+          resumeOverrideRef.current = null
+          if (source.src) {
+            useSourceBindingStore
+              .getState()
+              .setBinding(
+                bangumiId,
+                qPlugin,
+                { sourceUrl: source.src, title: source.name },
+                titleRefsStable,
+              )
+          }
+          if (!cancelled) resumeDoneFor.current = key
+          return
         }
 
         const epNum = targetSlot?.canonicalEp ?? 1
@@ -1577,7 +1655,18 @@ export function useWatchSession(bangumiId: number): WatchSession {
     }
     // plugins length/names & resolvedItem only — avoid identity thrash from ensureDefaults
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bangumiId, qPlugin, qPageUrl, qEp, qRoad, plugins.length, resolvedItem])
+  }, [
+    bangumiId,
+    qPlugin,
+    qPageUrl,
+    qEp,
+    qRoad,
+    plugins.length,
+    resolvedItem,
+    bgmEpisodesQuery.data?.data,
+    bgmEpisodesQuery.isFetched,
+    loadOfficialEpisodes,
+  ])
 
   const resolve = useQuery({
     queryKey: [
