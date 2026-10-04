@@ -859,6 +859,10 @@ export function useWatchSession(bangumiId: number): WatchSession {
               targetSlot = roadSlots[fallbackIdx]
             }
           }
+        } else if (roadSlots.length > 0) {
+          // A subject page without an explicit episode starts at the first
+          // playable slot. This also covers the initial default-source pick.
+          targetSlot = roadSlots[0]
         }
 
         setSelection({ plugin, source: searchItem, roads })
@@ -932,9 +936,9 @@ export function useWatchSession(bangumiId: number): WatchSession {
             safeSetParams(q, { replace: true })
           }
         } else {
-          // Do not auto-request first episode when opening subject page without explicit ?ep.
-          // Keep an explicit deep-link in the URL if the source did not expose
-          // a matching item; deleting it would make a later retry lose intent.
+          // No playable slot was returned. Keep an explicit deep-link in the
+          // URL if the source did not expose a matching item; deleting it would
+          // make a later retry lose intent.
           setEpisode(null)
           setResumePosition(0)
           resumeOverrideRef.current = null
