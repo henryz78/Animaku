@@ -133,9 +133,6 @@ export function usePlayerShortcuts({
         e.preventDefault()
         if (e.repeat) return
         stopDirectionalHold()
-        const nextTime = Math.max(0, v.currentTime - 5)
-        onSeekTo(nextTime)
-        onFlashHint(`⏪ -5s (${formatTime(nextTime)})`, 1000)
         holdKey = 'left'
         holdTimer = window.setTimeout(() => {
           holdTimer = 0
@@ -147,9 +144,6 @@ export function usePlayerShortcuts({
         e.preventDefault()
         if (e.repeat) return
         stopDirectionalHold()
-        const nextTime = Math.min(v.duration || 0, v.currentTime + 5)
-        onSeekTo(nextTime)
-        onFlashHint(`⏩ +5s (${formatTime(nextTime)})`, 1000)
         holdKey = 'right'
         holdTimer = window.setTimeout(() => {
           holdTimer = 0
@@ -226,7 +220,26 @@ export function usePlayerShortcuts({
     function onKeyUp(e: KeyboardEvent) {
       const key = e.key.toLowerCase()
       if (key !== 'arrowleft' && key !== 'arrowright') return
-      if (holdKey === key.slice(5) || holdKey !== null) stopDirectionalHold()
+      const side = key === 'arrowleft' ? 'left' : 'right'
+      if (holdKey !== side) return
+      const wasHold = holdActive
+      stopDirectionalHold()
+      if (wasHold) return
+
+      const {
+        videoRef: currentVideoRef,
+        onSeekTo: seekTo,
+        onFlashHint: flashHint,
+      } = optionsRef.current
+      const v = currentVideoRef.current
+      if (!v) return
+      const delta = side === 'left' ? -5 : 5
+      const duration = Number.isFinite(v.duration) && v.duration > 0
+        ? v.duration
+        : Number.POSITIVE_INFINITY
+      const nextTime = Math.max(0, Math.min(duration, v.currentTime + delta))
+      seekTo(nextTime)
+      flashHint(`${delta < 0 ? '⏪' : '⏩'} ${delta > 0 ? '+' : ''}${delta}s (${formatTime(nextTime)})`, 1000)
     }
 
     function onWindowBlur() {
