@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { isGuestUser } from '@animaku/shared'
 import { useAuthStore } from '../stores/auth'
+import { useAccountStore } from '../stores/account'
 import { preloadRoute } from '../lib/route-preload'
 import { BangumiAvatar } from './BangumiImage'
 
@@ -16,6 +17,9 @@ export function UserDropdown() {
   const user = useAuthStore((s) => s.getUser())
   const logout = useAuthStore((s) => s.logout)
   const initAuth = useAuthStore((s) => s.initAuth)
+  const accountUser = useAccountStore((s) => s.user)
+  const initAccount = useAccountStore((s) => s.init)
+  const logoutAccount = useAccountStore((s) => s.logout)
 
   const isGuest = isGuestUser(user)
 
@@ -23,6 +27,10 @@ export function UserDropdown() {
   useEffect(() => {
     void initAuth()
   }, [initAuth])
+
+  useEffect(() => {
+    void initAccount()
+  }, [initAccount])
 
   // 路由变化时自动收起菜单
   useEffect(() => {
@@ -260,6 +268,35 @@ export function UserDropdown() {
                 <span>偏好与设置</span>
               </div>
             </Link>
+          </div>
+
+          {/* 自建云端账号：与 Bangumi 绑定保持独立 */}
+          <div className="mt-1 border-t border-[var(--kz-border)] pt-1">
+            <Link
+              to="/account"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium text-[var(--kz-fg)] transition-colors hover:bg-[var(--kz-bg-hover)] hover:text-[var(--kz-accent)]"
+            >
+              <span className="flex items-center gap-2.5">
+                <svg className="h-4 w-4 text-[var(--kz-fg-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M17.5 19H6.8a4.8 4.8 0 1 1 1.1-9.47A6.5 6.5 0 0 1 20 11.5a3.5 3.5 0 0 1-2.5 7.5Z" />
+                </svg>
+                <span>云端账号</span>
+              </span>
+              <span className="max-w-[8rem] truncate text-[10px] text-[var(--kz-fg-dim)]">
+                {accountUser ? accountUser.username : '登录同步'}
+              </span>
+            </Link>
+            {accountUser && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); void logoutAccount() }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-rose-500 hover:bg-rose-500/10 transition-colors text-left"
+              >
+                <span className="ml-6">退出云端账号</span>
+              </button>
+            )}
           </div>
 
           {/* 底部功能/状态区 */}

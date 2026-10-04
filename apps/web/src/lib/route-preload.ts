@@ -23,6 +23,8 @@ export const routeImports = {
     import('../pages/SubjectPage').then((m) => ({ default: m.SubjectPage })),
   play: () =>
     import('../pages/PlayPage').then((m) => ({ default: m.PlayPage })),
+  account: () =>
+    import('../pages/AccountPage').then((m) => ({ default: m.AccountPage })),
 } as const
 
 export type RouteKey = keyof typeof routeImports
@@ -38,6 +40,7 @@ function normalizeRoutePath(path: string): RouteKey | null {
   if (clean === '/search' || clean.startsWith('/search/')) return 'search'
   if (clean.startsWith('/subject/')) return 'subject'
   if (clean.startsWith('/play/')) return 'play'
+  if (clean === '/account' || clean.startsWith('/account/')) return 'account'
   return null
 }
 

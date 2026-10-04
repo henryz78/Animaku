@@ -61,7 +61,13 @@ export async function api<T>(
 
   const { token: _t, ...rest } = init
   // `signal` from React Query / caller is preserved via rest — abort on navigate.
-  const res = await fetch(path, { ...rest, headers })
+  const res = await fetch(path, {
+    ...rest,
+    headers,
+    // Account sessions use an HttpOnly same-origin cookie. Explicitly keep
+    // credentials enabled while preserving any caller override.
+    credentials: rest.credentials ?? 'same-origin',
+  })
   // If aborted mid-body, text() throws — surface as ApiError-friendly abort
   let text: string
   try {

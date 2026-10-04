@@ -22,6 +22,24 @@ import {
   mapBangumiPersonDetail,
 } from './lib/bangumi-metadata'
 import { enrichBangumiEpisodesWithTmdb } from './lib/tmdb-episodes'
+import {
+  clearedSessionCookie,
+  createSession,
+  deleteSession,
+  findSessionUser,
+  findStoredUser,
+  hashPassword,
+  insertUser,
+  isRegistrationEnabled,
+  normalizeUsername,
+  readSessionToken,
+  sessionCookie,
+  toPublicUser,
+  validatePassword,
+  validateUsername,
+  verifyPassword,
+  type AccountDatabase,
+} from './lib/account-auth'
 
 const runtime = globalThis as typeof globalThis & {
   __ANIMAKU_WORKER__?: boolean
@@ -56,6 +74,7 @@ type WorkerBindings = {
   DANDAN_APP_SECRET?: string
   MEDIA_SECRET?: string
   CORS_ORIGINS?: string
+  ACCOUNT_REGISTRATION_ENABLED?: string
   UPSTREAM_PROXY_URL?: string
   UPSTREAM_PROXY_TOKEN?: string
   TMDB_API_KEY?: string
@@ -209,6 +228,7 @@ app.get('/api/health', (c) =>
       bangumi: true,
       danmaku: true,
       stats: Boolean(c.env.DB),
+      account: Boolean(c.env.DB),
       siteConfig: Boolean(c.env.DB),
       pluginRules: 'search-chapters-resolve',
       controlledSources: 'search-chapters-resolve',
@@ -1378,6 +1398,108 @@ app.get('/api/site/favicon', async (c) => {
     } catch { /* use the official 404 fallback */ }
   }
   return c.text('No custom icon', 404)
+})
+
+function accountDb(c: { env: WorkerBindings }): AccountDatabase | null {
+  return c.env.DB ? (c.env.DB as unknown as AccountDatabase) : null
+}
+
+app.get('/api/account/me', async (c) => {
+  const db = accountDb(c)
+  if (!db) return c.json({ ok: true, user: null, available: false })
+  try {
+    const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')))
+    return c.json({ ok: true, user, available: true })
+  } catch (error) {
+    return c.json({ ok: false, error: 'account_unavailable', message: error instanceof Error ? error.message : String(error) }, 503)
+  }
+})
+
+app.post('/api/account/register', async (c) => {
+  if (!isRegistrationEnabled(c.env.ACCOUNT_REGISTRATION_ENABLED)) {
+    return c.json({ ok: false, error: 'registration_disabled', message: '当前未开放注册' }, 403)
+  }
+  const db = accountDb(c)
+  if (!db) return c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const username = normalizeUsername(body.username)
+  const password = typeof body.password === 'string' ? body.password : ''
+  const usernameError = validateUsername(username)
+  if (usernameError) return c.json({ ok: false, error: 'invalid_username', message: usernameError }, 400)
+  const passwordError = validatePassword(password)
+  if (passwordError) return c.json({ ok: false, error: 'invalid_password', message: passwordError }, 400)
+  if (await findStoredUser(db, username)) {
+    return c.json({ ok: false, error: 'username_taken', message: '用户名已被使用' }, 409)
+  }
+  try {
+    const user = await insertUser(db, username, await hashPassword(password))
+    const token = await createSession(db, user.id, c.req.header('User-Agent'))
+    c.header('Set-Cookie', sessionCookie(token))
+    return c.json({ ok: true, user: toPublicUser(user) }, 201)
+  } catch (error) {
+    // A concurrent registration can win the unique constraint after the
+    // preflight lookup; expose the same friendly error in that case.
+    if (String(error).toLowerCase().includes('unique')) {
+      return c.json({ ok: false, error: 'username_taken', message: '用户名已被使用' }, 409)
+    }
+    return c.json({ ok: false, error: 'account_unavailable', message: '注册失败，请稍后重试' }, 503)
+  }
+})
+
+app.post('/api/account/login', async (c) => {
+  const db = accountDb(c)
+  if (!db) return c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const username = normalizeUsername(body.username)
+  const password = typeof body.password === 'string' ? body.password : ''
+  if (!username || !password) return c.json({ ok: false, error: 'invalid_credentials', message: '请输入用户名和密码' }, 400)
+  const user = await findStoredUser(db, username)
+  if (!user || user.disabled || !(await verifyPassword(password, user.password_hash))) {
+    return c.json({ ok: false, error: 'invalid_credentials', message: '用户名或密码错误' }, 401)
+  }
+  const now = Date.now()
+  await db.prepare('UPDATE account_users SET last_login_at = ?, updated_at = ? WHERE id = ?').bind(now, now, user.id).run()
+  const token = await createSession(db, user.id, c.req.header('User-Agent'))
+  c.header('Set-Cookie', sessionCookie(token))
+  return c.json({ ok: true, user: toPublicUser(user) })
+})
+
+app.post('/api/account/logout', async (c) => {
+  const db = accountDb(c)
+  if (db) await deleteSession(db, readSessionToken(c.req.header('Cookie')))
+  c.header('Set-Cookie', clearedSessionCookie())
+  return c.json({ ok: true })
+})
+
+app.post('/api/account/change-password', async (c) => {
+  const db = accountDb(c)
+  if (!db) return c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  const token = readSessionToken(c.req.header('Cookie'))
+  const user = await findSessionUser(db, token)
+  if (!user) return c.json({ ok: false, error: 'unauthorized', message: '请先登录' }, 401)
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
+  const newPassword = typeof body.newPassword === 'string' ? body.newPassword : ''
+  const passwordError = validatePassword(newPassword)
+  if (passwordError) return c.json({ ok: false, error: 'invalid_password', message: passwordError }, 400)
+  const stored = await db.prepare('SELECT id, username, username_key, password_hash, role, disabled, created_at FROM account_users WHERE id = ? LIMIT 1').bind(user.id).first<{
+    id: string
+    username: string
+    username_key: string
+    password_hash: string
+    role: 'user' | 'admin'
+    disabled: number
+    created_at: number
+  }>()
+  if (!stored || !(await verifyPassword(currentPassword, stored.password_hash))) {
+    return c.json({ ok: false, error: 'invalid_credentials', message: '当前密码错误' }, 401)
+  }
+  const now = Date.now()
+  await db.prepare('UPDATE account_users SET password_hash = ?, updated_at = ? WHERE id = ?').bind(await hashPassword(newPassword), now, user.id).run()
+  await db.prepare('DELETE FROM account_sessions WHERE user_id = ?').bind(user.id).run()
+  const newToken = await createSession(db, user.id, c.req.header('User-Agent'))
+  c.header('Set-Cookie', sessionCookie(newToken))
+  return c.json({ ok: true, user })
 })
 
 function isAdmin(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }) {

@@ -22,6 +22,7 @@
   ],
   "vars": {
     "APP_VERSION": "1.18.7",
-    "UPSTREAM_PROXY_URL": "https://animaku-egress-proxy.vercel.app"
+    "UPSTREAM_PROXY_URL": "https://animaku-egress-proxy.vercel.app",
+    "ACCOUNT_REGISTRATION_ENABLED": "true"
   }
 }

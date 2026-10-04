@@ -17,6 +17,7 @@ const HistoryPage = lazy(routeImports.history)
 const SettingsPage = lazy(routeImports.settings)
 const SubjectPage = lazy(routeImports.subject)
 const PlayPage = lazy(routeImports.play)
+const AccountPage = lazy(routeImports.account)
 
 function PageFallback() {
   return (
@@ -76,6 +77,14 @@ export default function App() {
           element={
             <Suspense fallback={<PageFallback />}>
               <SettingsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="account"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <AccountPage />
             </Suspense>
           }
         />
