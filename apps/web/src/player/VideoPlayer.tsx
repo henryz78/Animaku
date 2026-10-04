@@ -534,6 +534,57 @@ export function VideoPlayer({
     },
   })
 
+  // Gesture speed is temporary: it must not overwrite the user's saved speed.
+  const temporarySpeedRef = useRef<number | null>(null)
+  const startTemporarySpeed = useCallback(
+    (speed: number) => {
+      const video = videoRef.current
+      if (!video) return
+      if (temporarySpeedRef.current === null) {
+        temporarySpeedRef.current = video.playbackRate || player.speed || 1
+      }
+      try {
+        video.playbackRate = speed
+      } catch {
+        /* ignore engines that reject a rate change while loading */
+      }
+      flashSkipHint(`${speed} 倍速播放`, 900)
+    },
+    [flashSkipHint, player.speed],
+  )
+  const stopTemporarySpeed = useCallback(() => {
+    const video = videoRef.current
+    const restore = temporarySpeedRef.current
+    temporarySpeedRef.current = null
+    if (!video || restore === null) return
+    try {
+      video.playbackRate = restore
+    } catch {
+      /* ignore */
+    }
+  }, [])
+  useEffect(() => () => stopTemporarySpeed(), [activeSrc, stopTemporarySpeed])
+
+  const seekBy = useCallback(
+    (deltaSeconds: number) => {
+      const video = videoRef.current
+      if (!video) return
+      const duration = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : Number.POSITIVE_INFINITY
+      const target = Math.max(0, Math.min(duration, video.currentTime + deltaSeconds))
+      cancelCountdown()
+      cancelFirstEpPrompt()
+      resetPlayTick(target)
+      seekTo(target)
+      flashSkipHint(
+        `${deltaSeconds < 0 ? '⏪' : '⏩'} ${deltaSeconds > 0 ? '+' : ''}${deltaSeconds}s (${formatTime(target)})`,
+        900,
+      )
+    },
+    [cancelCountdown, cancelFirstEpPrompt, flashSkipHint, resetPlayTick, seekTo],
+  )
+
   // Sync hls instance to forward holder
   hlsHolderRef.current = hlsRef.current
 
@@ -594,6 +645,10 @@ export function VideoPlayer({
   const {
     onShellClick,
     onShellDoubleClick,
+    onShellPointerDown,
+    onShellPointerMove,
+    onShellPointerUp,
+    onShellPointerCancel,
     onShellMouseMove,
     onShellMouseLeave,
     onShellMouseEnter,
@@ -638,6 +693,9 @@ export function VideoPlayer({
       return closed
     },
     isPlaying: () => Boolean(videoRef.current && !videoRef.current.paused),
+    seekBy,
+    onTemporarySpeedStart: startTemporarySpeed,
+    onTemporarySpeedEnd: stopTemporarySpeed,
   })
 
   // Shortcuts
@@ -675,6 +733,8 @@ export function VideoPlayer({
       void exitAnyFs()
     },
     onFlashHint: flashSkipHint,
+    onTemporarySpeedStart: startTemporarySpeed,
+    onTemporarySpeedEnd: stopTemporarySpeed,
   })
 
   // Drag & drop local files
@@ -1102,6 +1162,10 @@ export function VideoPlayer({
       onMouseEnter={onShellMouseEnter}
       onMouseMove={onShellMouseMove}
       onMouseLeave={onShellMouseLeave}
+      onPointerDown={onShellPointerDown}
+      onPointerMove={onShellPointerMove}
+      onPointerUp={onShellPointerUp}
+      onPointerCancel={onShellPointerCancel}
       onClick={onShellClick}
       onDoubleClick={onShellDoubleClick}
       onContextMenu={(e) => {

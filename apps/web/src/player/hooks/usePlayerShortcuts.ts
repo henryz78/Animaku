@@ -18,6 +18,9 @@ export interface UsePlayerShortcutsOptions {
   onTogglePanel: () => void
   onCloseAllMenus: () => void
   onFlashHint: (msg: string, ms?: number) => void
+  /** Temporarily change playback speed while desktop ArrowLeft is held. */
+  onTemporarySpeedStart?: (speed: number) => void
+  onTemporarySpeedEnd?: () => void
   enabled?: boolean
 }
 
@@ -37,10 +40,23 @@ export function usePlayerShortcuts({
   onTogglePanel,
   onCloseAllMenus,
   onFlashHint,
+  onTemporarySpeedStart,
+  onTemporarySpeedEnd,
   enabled = true,
 }: UsePlayerShortcutsOptions) {
   useEffect(() => {
     if (!enabled) return
+
+    let leftHoldTimer = 0
+    let leftHoldActive = false
+
+    const stopLeftHold = () => {
+      window.clearTimeout(leftHoldTimer)
+      leftHoldTimer = 0
+      if (!leftHoldActive) return
+      leftHoldActive = false
+      onTemporarySpeedEnd?.()
+    }
 
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName
@@ -54,9 +70,16 @@ export function usePlayerShortcuts({
         onTogglePlay()
       } else if (k === 'arrowleft') {
         e.preventDefault()
+        if (e.repeat) return
         const nextTime = Math.max(0, v.currentTime - 5)
         onSeekTo(nextTime)
         onFlashHint(`⏪ -5s (${formatTime(nextTime)})`, 1000)
+        leftHoldTimer = window.setTimeout(() => {
+          leftHoldTimer = 0
+          leftHoldActive = true
+          onTemporarySpeedStart?.(2)
+          onFlashHint('⏩ 左键长按：2 倍速播放', 900)
+        }, 450)
       } else if (k === 'arrowright') {
         e.preventDefault()
         const nextTime = Math.min(v.duration || 0, v.currentTime + 5)
@@ -128,8 +151,24 @@ export function usePlayerShortcuts({
       }
     }
 
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key.toLowerCase() !== 'arrowleft') return
+      stopLeftHold()
+    }
+
+    function onWindowBlur() {
+      stopLeftHold()
+    }
+
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onWindowBlur)
+    return () => {
+      stopLeftHold()
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
+    }
   }, [
     enabled,
     videoRef,
@@ -147,5 +186,7 @@ export function usePlayerShortcuts({
     onTogglePanel,
     onCloseAllMenus,
     onFlashHint,
+    onTemporarySpeedStart,
+    onTemporarySpeedEnd,
   ])
 }
