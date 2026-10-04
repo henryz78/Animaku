@@ -27,6 +27,8 @@ import {
   mapBangumiReviews,
   mapBangumiStaff,
   mapBangumiEpisode,
+  mapBangumiCharacterDetail,
+  mapBangumiPersonDetail,
 } from '../lib/bangumi-metadata'
 import {
   setCommentsCdnHeaders,
@@ -41,6 +43,7 @@ import {
   cacheSet,
   wantsCacheBypass,
 } from '../lib/ttl-cache'
+import { enrichBangumiEpisodesWithTmdb } from '../lib/tmdb-episodes'
 
 export const bangumiRoutes = new Hono()
 
@@ -539,7 +542,18 @@ bangumiRoutes.get('/subjects/:id/episodes', async (c) => {
     )
   }
   const json = (await res.json()) as { data?: Record<string, unknown>[]; total?: number }
-  const episodes: BangumiEpisode[] = (json.data || []).map(mapBangumiEpisode)
+  let episodes: BangumiEpisode[] = (json.data || []).map(mapBangumiEpisode)
+  if (config.tmdbApiKey && episodes.some((episode) => episode.type === 0)) {
+    try {
+      const subjectResponse = await bangumiFetch(`${apiUrl}/v0/subjects/${id}`)
+      if (subjectResponse.ok) {
+        const subject = parseBangumiItem((await subjectResponse.json()) as Record<string, unknown>)
+        episodes = await enrichBangumiEpisodesWithTmdb(subject, episodes, config.tmdbApiKey)
+      }
+    } catch {
+      // TMDB is an optional image enrichment source; keep official episodes intact on failure.
+    }
+  }
   const payload = { data: episodes, total: json.total }
   cacheSet(key, payload, BANGUMI_CACHE_TTL.episodes)
   setBangumiListCdnHeaders(c, bypass)
@@ -598,6 +612,35 @@ bangumiRoutes.get('/subjects/:id/metadata', async (c) => {
   cacheSet(key, payload, BANGUMI_CACHE_TTL.metadata)
   setBangumiListCdnHeaders(c, bypass)
   return c.json(payload, 200, cacheHeaders(false))
+})
+
+/** Character/person detail pages use the official Bangumi detail and works endpoints. */
+bangumiRoutes.get('/characters/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request', message: '无效的 characterId' }, 400)
+  const [detail, works] = await Promise.all([
+    bangumiFetch(`${apiUrl}/v0/characters/${id}`),
+    bangumiFetch(`${apiUrl}/v0/characters/${id}/subjects`),
+  ])
+  if (!detail.ok) return c.json({ error: 'upstream', message: await detail.text() }, 502)
+  const detailJson = await detail.json()
+  const worksJson = works.ok ? await works.json() : []
+  return c.json({ data: mapBangumiCharacterDetail(detailJson, worksJson) })
+})
+
+bangumiRoutes.get('/persons/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request', message: '无效的 personId' }, 400)
+  const [detail, works, characters] = await Promise.all([
+    bangumiFetch(`${apiUrl}/v0/persons/${id}`),
+    bangumiFetch(`${apiUrl}/v0/persons/${id}/subjects`),
+    bangumiFetch(`${apiUrl}/v0/persons/${id}/characters`),
+  ])
+  if (!detail.ok) return c.json({ error: 'upstream', message: await detail.text() }, 502)
+  const detailJson = await detail.json()
+  const worksJson = works.ok ? await works.json() : []
+  const charactersJson = characters.ok ? await characters.json() : []
+  return c.json({ data: mapBangumiPersonDetail(detailJson, worksJson, charactersJson) })
 })
 
 bangumiRoutes.get('/me', async (c) => {

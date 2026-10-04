@@ -35,7 +35,7 @@ type RangeBucket = {
  *  [多集区间分页 pills (如 1-50, 51-100...)]
  *  [横向圆角集卡 | 全量网格]
  *
- * 集卡形状：横向圆角矩形，保证「第01集 / 官方副标题」可读。
+ * 集卡形状：横向滚动的大图卡片，集数和官方标题放在图片下方。
  * 行为钩子保留：listExpanded / data-ep-index；展开与折叠横条均为约 4 列。
  */
 export function MobileEpsSection({
@@ -502,29 +502,37 @@ export function MobileEpsSection({
                   }}
                   title={watched ? `${item.title} · 已观看` : item.title}
                   className={clsx(
-                    'kz-watch-ep-card kz-bili-ep relative overflow-hidden',
+                    'kz-watch-ep-card kz-bili-ep group',
                     playing && 'kz-bili-ep--playing',
                     watched && 'kz-bili-ep--watched',
                   )}
                 >
-                  {item.image ? (
-                    <img
-                      src={item.image}
-                      alt=""
-                      aria-hidden
-                      loading="lazy"
-                      className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-45"
-                    />
-                  ) : null}
-                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" aria-hidden />
-                  {playing ? (
-                    <span className="kz-bili-ep-bars" aria-hidden>
-                      <i />
-                      <i />
-                      <i />
+                  <span className="relative block aspect-video w-full overflow-hidden bg-[var(--kz-bg-hover)]">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt=""
+                        aria-hidden
+                        loading="lazy"
+                        decoding="async"
+                        className="pointer-events-none h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                      />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-xs text-[var(--kz-fg-dim)]">暂无剧照</span>
+                    )}
+                    {playing ? (
+                      <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        <span className="kz-bili-ep-bars" aria-hidden><i /><i /><i /></span>
+                        正在播放
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="flex min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left">
+                    <span className="text-xs font-semibold text-[var(--kz-fg)]">第{String(item.canonicalEp).padStart(2, '0')}集</span>
+                    <span className="kz-bili-ep-text w-full text-[11px] text-[var(--kz-fg-muted)]" title={item.title}>
+                      {item.title.replace(/^第\d{1,3}[话集]\s*/u, '') || '正片'}
                     </span>
-                  ) : null}
-                  <span className="kz-bili-ep-text relative z-10">{item.title}</span>
+                  </span>
                 </button>
               )
             })}

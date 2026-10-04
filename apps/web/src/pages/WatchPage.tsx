@@ -41,9 +41,10 @@ export function WatchPage() {
     Array.isArray(s.pluginOrder) ? s.pluginOrder : [],
   )
   const qc = useQueryClient()
-  const [summaryOpen, setSummaryOpen] = useState(false)
+  // The synopsis is useful context on first open, matching the reference app.
+  const [summaryOpen, setSummaryOpen] = useState(true)
   /** Mobile: whole meta card collapsed to 2 lines until expanded */
-  const [metaOpen, setMetaOpen] = useState(false)
+  const [metaOpen, setMetaOpen] = useState(true)
   /** Sources collapsed by default; on-demand stream probe when expanded by user */
   const [sourcesOpen, setSourcesOpen] = useState(false)
   /** Bilibili strip: false = horizontal cards, true = full grid (desktop + mobile) */
@@ -620,8 +621,8 @@ export function WatchPage() {
     <>
       {sourcesPanel}
       {epsPanel}
-      {recommendationsPanel}
       {metadataPanel}
+      {recommendationsPanel}
     </>
   )
 
@@ -636,7 +637,7 @@ export function WatchPage() {
           widescreen={widescreen}
         />
       ) : (
-        // Mobile: player → meta → 视频源 → 选集 → 推荐 → 吐槽评论 (Bilibili-style)
+        // Mobile: player → meta → 视频源 → 选集 → 角色/制作人员/评价 → 推荐 → 吐槽评论
         <MobileWatchLayout
           player={playerBlock}
           meta={metaBlock}

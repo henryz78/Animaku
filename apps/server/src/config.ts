@@ -301,6 +301,8 @@ export const config = {
       env.BANGUMI_IMAGE_HOST ||
       env.VITE_BANGUMI_IMAGE_HOST,
   ),
+  /** Optional TMDB v3 API key used only to enrich episodes with still images. */
+  tmdbApiKey: (env.TMDB_API_KEY || '').trim(),
   dandanApi: 'https://api.dandanplay.net',
   /** KazumiRules primary + gitcode mirror (same as Kazumi ApiEndpoints) */
   pluginShop:

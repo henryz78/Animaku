@@ -41,6 +41,7 @@ test('maps Bangumi characters, actors, staff and relations', () => {
     { id: 4, relation: '续集', name: 'Next', name_cn: '后续' },
   ])
   assert.equal(characters[0].actors[0].nameCn, '配音')
+  assert.equal(characters[0].role, '主角')
   assert.equal(staff[0].positions[0], '导演')
   assert.equal(relations[0].relation, '续集')
 })

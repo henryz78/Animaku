@@ -1,11 +1,15 @@
 import type {
   BangumiCharacter,
+  BangumiCharacterDetail,
   BangumiEpisode,
+  BangumiInfoboxEntry,
   BangumiPerson,
+  BangumiPersonDetail,
   BangumiRelation,
   BangumiReview,
   BangumiStaff,
   BangumiUser,
+  BangumiWorkReference,
 } from '@animaku/shared'
 
 type RawRecord = Record<string, unknown>
@@ -39,6 +43,15 @@ function image(value: unknown): string {
 function uniqueStrings(values: unknown[]): string[] {
   const flattened = values.flatMap((value) => Array.isArray(value) ? value : [value])
   return [...new Set(flattened.map((value) => String(value ?? '').trim()).filter(Boolean))]
+}
+
+function characterRole(value: unknown): string | undefined {
+  const numeric = Number(value)
+  if (numeric === 1) return '主角'
+  if (numeric === 2) return '配角'
+  if (numeric === 3) return '客串'
+  const label = text(value)
+  return label || undefined
 }
 
 export function mapBangumiEpisode(raw: unknown): BangumiEpisode {
@@ -100,7 +113,7 @@ export function mapBangumiCharacters(raw: unknown): BangumiCharacter[] {
         id: number(source.id),
         name: text(source.name),
         nameCn: text(source.name_cn, source.nameCn),
-        role: text(row.type, row.role, source.role) || undefined,
+        role: characterRole(row.type ?? row.role ?? source.role),
         image: image(source.images || source.image) || undefined,
         actors,
       }
@@ -210,5 +223,89 @@ export function mapBangumiReviews(raw: unknown): { data: BangumiReview[]; total:
     }
   }).filter((review) => review.content || review.user.id > 0 || review.user.nickname)
   return { data, total: number(root.total, data.length) || data.length }
+}
+
+function mapInfobox(raw: unknown): BangumiInfoboxEntry[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((entry) => {
+    const value = record(entry)
+    const key = text(value.key)
+    const rawValue = value.value
+    const values = Array.isArray(rawValue)
+      ? rawValue.map((item) => {
+        const object = record(item)
+        return text(object.v, object.value, item)
+      }).filter(Boolean)
+      : [text(rawValue)]
+    return { key, value: values.join('、') }
+  }).filter((entry) => entry.key || entry.value)
+}
+
+function mapWorkReference(raw: unknown): BangumiWorkReference | null {
+  const value = record(raw)
+  const id = number(value.id, value.subject_id, value.subjectId)
+  const name = text(value.name, value.subject_name)
+  const nameCn = text(value.name_cn, value.nameCn, value.subject_name_cn)
+  if (id <= 0 && !name && !nameCn) return null
+  return {
+    id,
+    name,
+    nameCn,
+    image: image(value.image || value.images) || undefined,
+    role: text(value.staff, value.role, value.relation) || undefined,
+    eps: text(value.eps) || undefined,
+    type: Number(value.type) || undefined,
+  }
+}
+
+export function mapBangumiCharacterDetail(raw: unknown, worksRaw: unknown): BangumiCharacterDetail {
+  const value = record(raw)
+  const stats = record(value.stat)
+  const works = Array.isArray(worksRaw)
+    ? worksRaw.map(mapWorkReference).filter((work): work is BangumiWorkReference => work != null)
+    : []
+  return {
+    id: number(value.id),
+    name: text(value.name),
+    nameCn: text(value.name_cn, value.nameCn),
+    summary: text(value.summary),
+    image: image(value.images || value.image) || undefined,
+    gender: text(value.gender) || undefined,
+    infobox: mapInfobox(value.infobox),
+    collects: Number(stats.collects) || undefined,
+    comments: Number(stats.comments) || undefined,
+    actors: [],
+    works,
+  }
+}
+
+export function mapBangumiPersonDetail(raw: unknown, worksRaw: unknown, charactersRaw: unknown): BangumiPersonDetail {
+  const value = record(raw)
+  const works = Array.isArray(worksRaw)
+    ? worksRaw.map(mapWorkReference).filter((work): work is BangumiWorkReference => work != null)
+    : []
+  const characters = Array.isArray(charactersRaw)
+    ? charactersRaw.map((entry) => {
+      const row = record(entry)
+      return mapWorkReference({
+        id: row.subject_id,
+        name: row.subject_name,
+        name_cn: row.subject_name_cn,
+        image: row.images,
+        role: row.staff,
+      })
+    }).filter((work): work is BangumiWorkReference => work != null)
+    : []
+  return {
+    id: number(value.id),
+    name: text(value.name),
+    nameCn: text(value.name_cn, value.nameCn),
+    summary: text(value.summary),
+    image: image(value.images || value.image) || undefined,
+    career: Array.isArray(value.career) ? uniqueStrings(value.career) : [],
+    infobox: mapInfobox(value.infobox),
+    works,
+    characters,
+  }
 }
 

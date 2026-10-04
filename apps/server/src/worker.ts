@@ -18,7 +18,10 @@ import {
   mapBangumiRelations,
   mapBangumiReviews,
   mapBangumiStaff,
+  mapBangumiCharacterDetail,
+  mapBangumiPersonDetail,
 } from './lib/bangumi-metadata'
+import { enrichBangumiEpisodesWithTmdb } from './lib/tmdb-episodes'
 
 const runtime = globalThis as typeof globalThis & {
   __ANIMAKU_WORKER__?: boolean
@@ -55,6 +58,7 @@ type WorkerBindings = {
   CORS_ORIGINS?: string
   UPSTREAM_PROXY_URL?: string
   UPSTREAM_PROXY_TOKEN?: string
+  TMDB_API_KEY?: string
 }
 
 type WorkerEnv = { Bindings: WorkerBindings }
@@ -366,10 +370,23 @@ app.get('/api/bangumi/subjects/:id/episodes', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request', message: '无效的 subjectId' }, 400)
   try {
-    const { response, data } = await upstreamJson(`${bangumiApi(c)}/v0/episodes?subject_id=${id}&limit=200`, {}, bangumiUserAgent(c))
-    if (!response.ok) return c.json(upstreamError(response, data), 502)
-    const rows = Array.isArray(data) ? data : (data as { data?: unknown[] })?.data || []
-    const episodes = rows.map(mapBangumiEpisode)
+    const episodeResult = await upstreamJson(`${bangumiApi(c)}/v0/episodes?subject_id=${id}&limit=200`, {}, bangumiUserAgent(c))
+    if (!episodeResult.response.ok) return c.json(upstreamError(episodeResult.response, episodeResult.data), 502)
+    const rows = Array.isArray(episodeResult.data)
+      ? episodeResult.data
+      : (episodeResult.data as { data?: unknown[] })?.data || []
+    let episodes = rows.map(mapBangumiEpisode)
+    if (c.env.TMDB_API_KEY && episodes.some((episode) => episode.type === 0)) {
+      try {
+        const subjectResult = await upstreamJson(`${bangumiApi(c)}/v0/subjects/${id}`, {}, bangumiUserAgent(c))
+        if (subjectResult.response.ok && subjectResult.data && typeof subjectResult.data === 'object') {
+          const subject = parseBangumiItem(subjectResult.data as Record<string, unknown>)
+          episodes = await enrichBangumiEpisodesWithTmdb(subject, episodes, c.env.TMDB_API_KEY)
+        }
+      } catch {
+        // TMDB is optional; preserve the official episode response if enrichment fails.
+      }
+    }
     return c.json({ data: episodes })
   } catch (error) {
     return c.json({ error: 'upstream', message: String(error) }, 502)
@@ -409,6 +426,38 @@ app.get('/api/bangumi/subjects/:id/metadata', async (c) => {
       'Cache-Control': 'public, max-age=300, s-maxage=21600, stale-while-revalidate=86400',
     },
   )
+})
+
+app.get('/api/bangumi/characters/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request', message: '无效的 characterId' }, 400)
+  const results = await Promise.allSettled([
+    upstreamJson(`${bangumiApi(c)}/v0/characters/${id}`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiApi(c)}/v0/characters/${id}/subjects`, {}, bangumiUserAgent(c)),
+  ])
+  const detail = results[0]
+  if (detail?.status !== 'fulfilled' || !detail.value.response.ok) {
+    return c.json({ error: 'upstream', message: detail?.status === 'fulfilled' ? detail.value.data : '角色详情请求失败' }, 502)
+  }
+  const works = results[1]?.status === 'fulfilled' && results[1].value.response.ok ? results[1].value.data : []
+  return c.json({ data: mapBangumiCharacterDetail(detail.value.data, works) })
+})
+
+app.get('/api/bangumi/persons/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request', message: '无效的 personId' }, 400)
+  const results = await Promise.allSettled([
+    upstreamJson(`${bangumiApi(c)}/v0/persons/${id}`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiApi(c)}/v0/persons/${id}/subjects`, {}, bangumiUserAgent(c)),
+    upstreamJson(`${bangumiApi(c)}/v0/persons/${id}/characters`, {}, bangumiUserAgent(c)),
+  ])
+  const detail = results[0]
+  if (detail?.status !== 'fulfilled' || !detail.value.response.ok) {
+    return c.json({ error: 'upstream', message: detail?.status === 'fulfilled' ? detail.value.data : '人员详情请求失败' }, 502)
+  }
+  const works = results[1]?.status === 'fulfilled' && results[1].value.response.ok ? results[1].value.data : []
+  const characters = results[2]?.status === 'fulfilled' && results[2].value.response.ok ? results[2].value.data : []
+  return c.json({ data: mapBangumiPersonDetail(detail.value.data, works, characters) })
 })
 
 function authorization(c: { req: { header: (name: string) => string | undefined } }) {

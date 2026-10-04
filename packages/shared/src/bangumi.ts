@@ -133,6 +133,47 @@ export interface BangumiPerson {
   image?: string
 }
 
+export interface BangumiInfoboxEntry {
+  key: string
+  value: string
+}
+
+export interface BangumiWorkReference {
+  id: number
+  name: string
+  nameCn: string
+  image?: string
+  role?: string
+  eps?: string
+  type?: number
+}
+
+export interface BangumiCharacterDetail {
+  id: number
+  name: string
+  nameCn: string
+  summary: string
+  image?: string
+  gender?: string
+  infobox: BangumiInfoboxEntry[]
+  collects?: number
+  comments?: number
+  actors: BangumiPerson[]
+  works: BangumiWorkReference[]
+}
+
+export interface BangumiPersonDetail {
+  id: number
+  name: string
+  nameCn: string
+  summary: string
+  image?: string
+  career: string[]
+  infobox: BangumiInfoboxEntry[]
+  works: BangumiWorkReference[]
+  characters: BangumiWorkReference[]
+}
+
 export interface BangumiCharacter {
   id: number
   name: string

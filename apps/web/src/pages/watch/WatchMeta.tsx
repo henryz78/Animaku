@@ -91,8 +91,11 @@ function MetaCover({
 }
 
 function MetaChips({ item }: { item: BangumiItem }) {
+  const [tagsOpen, setTagsOpen] = useState(false)
   const airLabel = airProgressLabel(item)
   const air = estimateAirProgress(item)
+  const tags = item.tags || []
+  const visibleTags = tagsOpen ? tags : tags.slice(0, 6)
   return (
     <div className="flex flex-wrap gap-1.5">
       {item.ratingScore > 0 && (
@@ -109,11 +112,24 @@ function MetaChips({ item }: { item: BangumiItem }) {
         <span className={airChipClass(air.status)}>{airLabel}</span>
       )}
       {item.airDate && <span className="kz-watch-chip">{item.airDate}</span>}
-      {item.tags?.slice(0, 6).map((t) => (
+      {item.eps > 0 && <span className="kz-watch-chip">全 {item.eps} 话</span>}
+      {item.totalEpisodes > 0 && item.totalEpisodes !== item.eps && (
+        <span className="kz-watch-chip">资料 {item.totalEpisodes} 集</span>
+      )}
+      {item.tags?.length === 0 ? null : visibleTags.map((t) => (
         <span key={t.name} className="kz-watch-chip max-w-[8rem] truncate">
           {t.name}
         </span>
       ))}
+      {tags.length > 6 && (
+        <button
+          type="button"
+          onClick={() => setTagsOpen((value) => !value)}
+          className="kz-watch-chip text-[var(--kz-accent)] hover:underline"
+        >
+          {tagsOpen ? '收起标签' : `更多标签（${tags.length - 6}）`}
+        </button>
+      )}
     </div>
   )
 }
@@ -463,6 +479,12 @@ export function WatchMeta({
 
         {item && <MetaChips item={item} />}
 
+        {item?.alias && item.alias.length > 0 && (
+          <p className="line-clamp-2 text-xs text-[var(--kz-fg-dim)]">
+            别名：{item.alias.slice(0, 4).join(' / ')}{item.alias.length > 4 ? ' …' : ''}
+          </p>
+        )}
+
         {item?.summary && (
           <div className="text-xs leading-relaxed text-[var(--kz-fg-muted)]">
             <p className={summaryOpen ? '' : 'line-clamp-2'}>{item.summary}</p>
@@ -523,6 +545,11 @@ export function WatchMeta({
           mediaHint={mediaHint}
         />
         {item && <MetaChips item={item} />}
+        {item?.alias && item.alias.length > 0 && (
+          <p className="line-clamp-2 text-[11px] text-[var(--kz-fg-dim)]">
+            别名：{item.alias.slice(0, 4).join(' / ')}{item.alias.length > 4 ? ' …' : ''}
+          </p>
+        )}
         {item?.summary && (
           <div className="text-[13px] leading-relaxed text-[var(--kz-fg-muted)]">
             <p className={summaryOpen ? '' : 'line-clamp-3'}>{item.summary}</p>

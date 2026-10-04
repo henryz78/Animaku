@@ -39,8 +39,8 @@ export function MobileWatchLayout({
         <div className="kz-watch-meta min-w-0">{meta}</div>
         <div className="min-w-0">{sources}</div>
         <div className="min-w-0">{episodes}</div>
-        {recommendations && <div className="min-w-0">{recommendations}</div>}
         {metadata && <div className="min-w-0">{metadata}</div>}
+        {recommendations && <div className="min-w-0">{recommendations}</div>}
         {comments && <div className="min-w-0">{comments}</div>}
       </div>
     </div>

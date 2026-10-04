@@ -6,6 +6,8 @@ import type {
   BangumiCollectionEntry,
   BangumiRecommendationsPayload,
   BangumiSubjectMetadata,
+  BangumiCharacterDetail,
+  BangumiPersonDetail,
   CommentPagePayload,
   CollectType,
 } from '@animaku/shared'
@@ -79,6 +81,14 @@ export const bangumiApi = {
       { signal: opts?.signal },
     )
   },
+  character: (id: number | string, opts?: SignalOpt) =>
+    api<{ data: BangumiCharacterDetail }>(`/api/bangumi/characters/${id}`, {
+      signal: opts?.signal,
+    }),
+  person: (id: number | string, opts?: SignalOpt) =>
+    api<{ data: BangumiPersonDetail }>(`/api/bangumi/persons/${id}`, {
+      signal: opts?.signal,
+    }),
   recommendations: (
     subjectId: number | string,
     opts?: {
