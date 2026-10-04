@@ -47,14 +47,16 @@ export function usePlayerShortcuts({
   useEffect(() => {
     if (!enabled) return
 
-    let leftHoldTimer = 0
-    let leftHoldActive = false
+    let holdTimer = 0
+    let holdKey: 'left' | 'right' | null = null
+    let holdActive = false
 
-    const stopLeftHold = () => {
-      window.clearTimeout(leftHoldTimer)
-      leftHoldTimer = 0
-      if (!leftHoldActive) return
-      leftHoldActive = false
+    const stopDirectionalHold = () => {
+      window.clearTimeout(holdTimer)
+      holdTimer = 0
+      holdKey = null
+      if (!holdActive) return
+      holdActive = false
       onTemporarySpeedEnd?.()
     }
 
@@ -71,20 +73,31 @@ export function usePlayerShortcuts({
       } else if (k === 'arrowleft') {
         e.preventDefault()
         if (e.repeat) return
+        stopDirectionalHold()
         const nextTime = Math.max(0, v.currentTime - 5)
         onSeekTo(nextTime)
         onFlashHint(`⏪ -5s (${formatTime(nextTime)})`, 1000)
-        leftHoldTimer = window.setTimeout(() => {
-          leftHoldTimer = 0
-          leftHoldActive = true
+        holdKey = 'left'
+        holdTimer = window.setTimeout(() => {
+          holdTimer = 0
+          holdActive = true
           onTemporarySpeedStart?.(2)
           onFlashHint('⏩ 左键长按：2 倍速播放', 900)
         }, 450)
       } else if (k === 'arrowright') {
         e.preventDefault()
+        if (e.repeat) return
+        stopDirectionalHold()
         const nextTime = Math.min(v.duration || 0, v.currentTime + 5)
         onSeekTo(nextTime)
         onFlashHint(`⏩ +5s (${formatTime(nextTime)})`, 1000)
+        holdKey = 'right'
+        holdTimer = window.setTimeout(() => {
+          holdTimer = 0
+          holdActive = true
+          onTemporarySpeedStart?.(2)
+          onFlashHint('⏩ 右键长按：2 倍速播放', 900)
+        }, 450)
       } else if (k === 'arrowup') {
         e.preventDefault()
         const nextVol = Math.min(1, Math.round((v.volume + 0.05) * 100) / 100)
@@ -152,22 +165,29 @@ export function usePlayerShortcuts({
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key.toLowerCase() !== 'arrowleft') return
-      stopLeftHold()
+      const key = e.key.toLowerCase()
+      if (key !== 'arrowleft' && key !== 'arrowright') return
+      if (holdKey === key.slice(5) || holdKey !== null) stopDirectionalHold()
     }
 
     function onWindowBlur() {
-      stopLeftHold()
+      stopDirectionalHold()
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState !== 'visible') stopDirectionalHold()
     }
 
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onWindowBlur)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
-      stopLeftHold()
+      stopDirectionalHold()
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onWindowBlur)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [
     enabled,

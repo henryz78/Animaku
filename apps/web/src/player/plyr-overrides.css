@@ -365,6 +365,10 @@ html[data-theme='light'] .kz-watch-road-chip[aria-selected='true'] {
   /* Promote video layer so overlays don't blank it */
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Anime4K WebGPU output — sits above video, under danmaku */

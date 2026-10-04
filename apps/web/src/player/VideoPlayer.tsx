@@ -1169,7 +1169,13 @@ export function VideoPlayer({
       onClick={onShellClick}
       onDoubleClick={onShellDoubleClick}
       onContextMenu={(e) => {
-        if (pointerMode !== 'desktop') return
+        if (pointerMode !== 'desktop') {
+          // Android Chrome otherwise opens its native “download video” menu
+          // after a long press on the media element.
+          e.preventDefault()
+          e.stopPropagation()
+          return
+        }
         e.preventDefault()
         e.stopPropagation()
         const shell = shellRef.current
@@ -1208,6 +1214,19 @@ export function VideoPlayer({
         ref={videoRef}
         className="kz-native-video"
         playsInline
+        draggable={false}
+        onContextMenu={(e) => {
+          if (pointerMode !== 'desktop') {
+            e.preventDefault()
+            e.stopPropagation()
+          }
+        }}
+        onDragStart={(e) => {
+          if (pointerMode !== 'desktop') {
+            e.preventDefault()
+            e.stopPropagation()
+          }
+        }}
         style={{
           position: 'absolute',
           top: 0,
