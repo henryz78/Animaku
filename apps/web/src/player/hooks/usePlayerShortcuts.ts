@@ -137,8 +137,8 @@ export function usePlayerShortcuts({
         holdTimer = window.setTimeout(() => {
           holdTimer = 0
           holdActive = true
-          onTemporarySpeedStart?.(1.5)
-          onFlashHint('⏩ 左键长按：1.5 倍速播放', 900)
+          onTemporarySpeedStart?.(2)
+          onFlashHint('⏩ 左键长按：2 倍速播放', 900)
         }, 450)
       } else if (k === 'arrowright') {
         e.preventDefault()
@@ -148,8 +148,8 @@ export function usePlayerShortcuts({
         holdTimer = window.setTimeout(() => {
           holdTimer = 0
           holdActive = true
-          onTemporarySpeedStart?.(1.5)
-          onFlashHint('⏩ 右键长按：1.5 倍速播放', 900)
+          onTemporarySpeedStart?.(2)
+          onFlashHint('⏩ 右键长按：2 倍速播放', 900)
         }, 450)
       } else if (k === 'arrowup') {
         e.preventDefault()
