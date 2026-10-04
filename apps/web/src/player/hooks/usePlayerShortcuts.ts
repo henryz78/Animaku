@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type { DanmakuSettings, DanmakuPanelState } from '../types'
 import { formatTime } from '../media/format'
 
@@ -44,6 +44,47 @@ export function usePlayerShortcuts({
   onTemporarySpeedEnd,
   enabled = true,
 }: UsePlayerShortcutsOptions) {
+  const optionsRef = useRef<UsePlayerShortcutsOptions>({
+    videoRef,
+    onTogglePlay,
+    onSeekTo,
+    onPrev,
+    onNext,
+    onToggleFs,
+    onToggleWebFs,
+    onToggleAspectRatio,
+    onToggleDanmaku,
+    onDanmakuChange,
+    danmaku,
+    danmakuPanel,
+    onTogglePanel,
+    onCloseAllMenus,
+    onFlashHint,
+    onTemporarySpeedStart,
+    onTemporarySpeedEnd,
+    enabled,
+  })
+  optionsRef.current = {
+    videoRef,
+    onTogglePlay,
+    onSeekTo,
+    onPrev,
+    onNext,
+    onToggleFs,
+    onToggleWebFs,
+    onToggleAspectRatio,
+    onToggleDanmaku,
+    onDanmakuChange,
+    danmaku,
+    danmakuPanel,
+    onTogglePanel,
+    onCloseAllMenus,
+    onFlashHint,
+    onTemporarySpeedStart,
+    onTemporarySpeedEnd,
+    enabled,
+  }
+
   useEffect(() => {
     if (!enabled) return
 
@@ -57,13 +98,31 @@ export function usePlayerShortcuts({
       holdKey = null
       if (!holdActive) return
       holdActive = false
-      onTemporarySpeedEnd?.()
+      optionsRef.current.onTemporarySpeedEnd?.()
     }
 
     function onKey(e: KeyboardEvent) {
+      const {
+        videoRef: currentVideoRef,
+        onTogglePlay,
+        onSeekTo,
+        onPrev,
+        onNext,
+        onToggleFs,
+        onToggleWebFs,
+        onToggleAspectRatio,
+        onToggleDanmaku,
+        onDanmakuChange,
+        danmaku,
+        danmakuPanel,
+        onTogglePanel,
+        onCloseAllMenus,
+        onFlashHint,
+        onTemporarySpeedStart,
+      } = optionsRef.current
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      const v = videoRef.current
+      const v = currentVideoRef.current
       if (!v) return
       const k = e.key.toLowerCase()
 
@@ -189,24 +248,5 @@ export function usePlayerShortcuts({
       window.removeEventListener('blur', onWindowBlur)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [
-    enabled,
-    videoRef,
-    onTogglePlay,
-    onSeekTo,
-    onPrev,
-    onNext,
-    onToggleFs,
-    onToggleWebFs,
-    onToggleAspectRatio,
-    onToggleDanmaku,
-    onDanmakuChange,
-    danmaku,
-    danmakuPanel,
-    onTogglePanel,
-    onCloseAllMenus,
-    onFlashHint,
-    onTemporarySpeedStart,
-    onTemporarySpeedEnd,
-  ])
+  }, [enabled, videoRef])
 }
