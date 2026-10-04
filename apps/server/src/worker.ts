@@ -51,6 +51,40 @@ type WorkerBindings = {
 
 type WorkerEnv = { Bindings: WorkerBindings }
 
+type BilibiliBangumiMapping = {
+  targetId: string
+  isHkMoTw: boolean
+  title?: string
+}
+
+/**
+ * Cloudflare does not run the Node startup path that loads bangumi-data into
+ * an in-process SQLite database. Read the cross-site mapping from D1 instead.
+ */
+async function getBilibiliTargetByBangumiId(
+  env: WorkerBindings,
+  bangumiId: number,
+): Promise<BilibiliBangumiMapping | null> {
+  if (!env.DB) return null
+  try {
+    const row = await env.DB
+      .prepare('SELECT title, sites FROM bangumi_data_mapping WHERE bangumi_id = ? LIMIT 1')
+      .bind(bangumiId)
+      .first<{ title?: string; sites?: string }>()
+    if (!row?.sites) return null
+    const sites = JSON.parse(row.sites) as Record<string, unknown>
+    if (typeof sites.bilibili === 'string' && sites.bilibili) {
+      return { targetId: sites.bilibili, isHkMoTw: false, title: row.title || undefined }
+    }
+    if (typeof sites.bilibili_hk_mo_tw === 'string' && sites.bilibili_hk_mo_tw) {
+      return { targetId: sites.bilibili_hk_mo_tw, isHkMoTw: true, title: row.title || undefined }
+    }
+  } catch {
+    // The mapping table may not exist during a partially migrated deployment.
+  }
+  return null
+}
+
 const app = new Hono<WorkerEnv>()
 const DEFAULT_BANGUMI_API = 'https://bgmapi.anibt.net'
 const DEFAULT_BANGUMI_NEXT_API = 'https://next.bgm.tv'
@@ -875,6 +909,25 @@ app.get('/api/danmaku/bilibili', async (c) => {
   if (!target) return c.json({ error: 'bad_request', message: '请提供有效的 B 站链接或标识（支持 BV号 / ep番剧 / ss季度 / av号 / b23短链）' }, 400)
 
   try {
+    if (target.type === 'bgm') {
+      const mapped = await getBilibiliTargetByBangumiId(c.env, target.bangumiId)
+      if (!mapped?.targetId) {
+        return c.json({ data: [], count: 0, meta: { unmapped: true, message: `未在跨站映射库中找到 Bangumi ID ${target.bangumiId} 对应的 B 站番剧` } }, 200)
+      }
+      const mappedTarget = parseBilibiliInput(mapped.targetId)
+      if (mappedTarget && mappedTarget.type !== 'bgm') {
+        target = {
+          ...mappedTarget,
+          page: queryPage >= 0 ? queryPage : mappedTarget.page ?? target.page,
+        }
+      } else {
+        const mediaId = Number.parseInt(mapped.targetId, 10)
+        if (!Number.isFinite(mediaId) || mediaId <= 0) {
+          return c.json({ data: [], count: 0, meta: { unmapped: true, message: `Bangumi ID ${target.bangumiId} 对应的 B 站映射标识格式无法识别` } }, 200)
+        }
+        target = { type: 'md', mediaId, page: queryPage >= 0 ? queryPage : target.page, raw: `md${mediaId}` }
+      }
+    }
     if (target.type === 'b23') {
       const resolved = await resolveBilibiliShortLink(target.url)
       if (!resolved) return c.json({ error: 'bad_request', message: '未能解析该 b23.tv 短链接对应的内容' }, 400)
