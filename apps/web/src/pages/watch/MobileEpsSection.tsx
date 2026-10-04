@@ -527,7 +527,7 @@ export function MobileEpsSection({
                       </span>
                     ) : null}
                   </span>
-                  <span className="flex min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left">
+                  <span className="flex min-h-[3.25rem] min-w-0 flex-col items-start gap-0.5 px-2 py-1.5 text-left">
                     <span className="text-xs font-semibold text-[var(--kz-fg)]">第{String(item.canonicalEp).padStart(2, '0')}集</span>
                     <span className="kz-bili-ep-text w-full text-[11px] text-[var(--kz-fg-muted)]" title={item.title}>
                       {item.title.replace(/^第\d{1,3}[话集]\s*/u, '') || '正片'}

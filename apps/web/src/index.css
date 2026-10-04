@@ -1323,6 +1323,7 @@ html[data-theme='dark'] .kz-source-pill--retry:hover {
 /* Horizontal episode cards with the still above the title. */
 .kz-bili-ep {
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
   gap: 0;

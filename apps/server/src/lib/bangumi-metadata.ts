@@ -113,7 +113,9 @@ export function mapBangumiCharacters(raw: unknown): BangumiCharacter[] {
         id: number(source.id),
         name: text(source.name),
         nameCn: text(source.name_cn, source.nameCn),
-        role: characterRole(row.type ?? row.role ?? source.role),
+        // Bangumi's `type` is the relation record type and is usually `1`.
+        // The human-readable role (主角/配角/闲角) lives in `relation`.
+        role: characterRole(row.relation ?? row.role ?? row.type ?? source.role),
         image: image(source.images || source.image) || undefined,
         actors,
       }

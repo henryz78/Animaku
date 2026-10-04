@@ -41,8 +41,8 @@ export function WatchPage() {
     Array.isArray(s.pluginOrder) ? s.pluginOrder : [],
   )
   const qc = useQueryClient()
-  // The synopsis is useful context on first open, matching the reference app.
-  const [summaryOpen, setSummaryOpen] = useState(true)
+  // Keep the long synopsis compact on first open; users can expand it on demand.
+  const [summaryOpen, setSummaryOpen] = useState(false)
   /** Mobile: whole meta card collapsed to 2 lines until expanded */
   const [metaOpen, setMetaOpen] = useState(true)
   /** Sources collapsed by default; on-demand stream probe when expanded by user */

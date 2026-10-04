@@ -91,7 +91,7 @@ function CharacterCard({ character, onSelect }: { character: BangumiCharacter; o
         <button
           type="button"
           onClick={() => onSelect(character.id, character.actors)}
-          className="flex min-w-0 gap-2 hover:text-[var(--kz-accent)]"
+          className="flex w-full min-w-0 gap-2 overflow-hidden text-left hover:text-[var(--kz-accent)]"
           title={`查看 ${displayName(character)} 的详细资料`}
         >
           {characterContent}
@@ -119,7 +119,7 @@ function StaffCard({ person, onSelect }: { person: BangumiPerson & { positions?:
     <button
       type="button"
       onClick={() => onSelect(person.id)}
-      className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--kz-border)]/60 bg-[var(--kz-bg-soft)]/35 p-2 hover:text-[var(--kz-accent)]"
+      className="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-[var(--kz-border)]/60 bg-[var(--kz-bg-soft)]/35 p-2 text-left hover:text-[var(--kz-accent)]"
       title={`查看 ${displayName(person)} 的详细资料`}
     >
       {content}
@@ -301,7 +301,7 @@ export function BangumiMetadataPanel({ subjectId }: { subjectId: number }) {
             <h3 className="text-sm font-semibold text-[var(--kz-fg)]">关联作品 <span className="text-xs font-normal text-[var(--kz-fg-muted)]">{metadata.relations.length}</span></h3>
             <div className="mt-2 flex gap-3 overflow-x-auto pb-1">
               {visibleRelations.map((relation) => (
-                <Link key={`${relation.id}-${relation.relation}`} to={`/subject/${relation.id}`} className="group w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--kz-border)]/70 bg-[var(--kz-bg-soft)]/40 hover:border-[var(--kz-accent)]">
+                <Link key={`${relation.id}-${relation.relation}`} to={`/subject/${relation.id}`} title={`${relation.relation} · ${displayName(relation)}`} aria-label={`${relation.relation} · ${displayName(relation)}`} className="group w-24 shrink-0 overflow-hidden rounded-xl border border-[var(--kz-border)]/70 bg-[var(--kz-bg-soft)]/40 hover:border-[var(--kz-accent)]">
                   <Avatar src={relation.image} alt={displayName(relation)} className="h-28 w-full rounded-none border-0 ring-0" />
                   <span className="block truncate px-2 pt-1.5 text-[11px] font-medium text-[var(--kz-fg)] group-hover:text-[var(--kz-accent)]">{displayName(relation)}</span>
                   <span className="block truncate px-2 pb-1.5 text-[10px] text-[var(--kz-fg-muted)]">{relation.relation}</span>
