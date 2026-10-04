@@ -80,7 +80,7 @@ function resolveDataDir(): string {
 
 function resolveAppVersion(): string {
   if (env.APP_VERSION?.trim()) return env.APP_VERSION.trim()
-  if (isWorkerRuntime) return 'v1.18.6'
+  if (isWorkerRuntime) return 'v1.18.7'
   const candidatePaths = [
     resolve(process.cwd(), 'package.json'),
     resolve(process.cwd(), '../../package.json'),

@@ -135,7 +135,7 @@ function getPlayback(env: WorkerBindings) {
 async function upstreamJson(
   url: string,
   init: RequestInit = {},
-  userAgent = 'Animaku/1.18.6',
+  userAgent = 'Animaku/1.18.7',
 ): Promise<{ response: Response; data: unknown }> {
   const headers = new Headers(init.headers)
   headers.set('Accept', headers.get('Accept') || 'application/json')
@@ -186,7 +186,7 @@ app.get('/api/health', (c) =>
   c.json({
     ok: true,
     runtime: 'cloudflare-worker',
-    version: c.env.APP_VERSION || '1.18.6',
+    version: c.env.APP_VERSION || '1.18.7',
     // Keep the official health fields for clients that use the original API.
     danmakuConfigured: true,
     danmakuUsingFallback: !(c.env.DANDAN_APP_ID?.trim() && c.env.DANDAN_APP_SECRET?.trim()),
@@ -214,7 +214,7 @@ function bangumiNextApi(c: { env: WorkerBindings }) {
 }
 
 function bangumiUserAgent(c: { env: WorkerBindings }) {
-  return c.env.BANGUMI_USER_AGENT || 'uerax/Animaku/1.18.6 (https://github.com/henryz78/Animaku)'
+  return c.env.BANGUMI_USER_AGENT || 'uerax/Animaku/1.18.7 (https://github.com/henryz78/Animaku)'
 }
 
 function subjectItem(raw: unknown): BangumiItem | unknown {
@@ -708,7 +708,7 @@ async function dandanGet(c: { env: WorkerBindings }, path: string, query?: Recor
   const credentials = dandanCredentials(c)
   const url = new URL(path, DEFAULT_DANDAN_API)
   for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, value)
-  const headers = new Headers({ Accept: 'application/json', 'User-Agent': 'Animaku/1.18.6' })
+  const headers = new Headers({ Accept: 'application/json', 'User-Agent': 'Animaku/1.18.7' })
   headers.set('X-AppId', credentials.appId)
   headers.set('X-AppSecret', credentials.appSecret)
   return upstreamJson(url.toString(), { headers })
