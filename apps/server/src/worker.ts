@@ -314,13 +314,16 @@ app.post('/api/bangumi/search', async (c) => {
   if (tags.length) filter.tag = tags
   if (airDate.length) filter.air_date = airDate
   if (upstreamSort === 'rank' || upstreamSort === 'score') filter.rank = ['>0', '<=99999']
+  // Bangumi v0 requires a keyword even for tag/year/type-only searches.
+  // Keep the Cloudflare entrypoint aligned with the official server route.
+  const upstreamKeyword = keyword || '*'
   try {
     const { response, data } = await upstreamJson(
       `${bangumiApi(c)}/v0/search/subjects?limit=${limit}&offset=${offset}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, sort: upstreamSort, filter }),
+        body: JSON.stringify({ keyword: upstreamKeyword, sort: upstreamSort, filter }),
       },
       bangumiUserAgent(c),
     )
