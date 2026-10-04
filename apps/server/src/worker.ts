@@ -1502,11 +1502,136 @@ app.post('/api/account/change-password', async (c) => {
   return c.json({ ok: true, user })
 })
 
+async function requireAccountUser(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }): Promise<{ db: AccountDatabase; user: NonNullable<Awaited<ReturnType<typeof findSessionUser>>> } | null> {
+  const db = c.env.DB ? (c.env.DB as unknown as AccountDatabase) : null
+  if (!db) return null
+  const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')))
+  return user ? { db, user } : null
+}
+
+const ACCOUNT_DATA_KEYS = new Set([
+  'animaku-settings',
+  'animaku-history',
+  'animaku-plugins',
+  'animaku-search-history',
+  'animaku-watched-episodes',
+  'animaku-source-bindings',
+  'animaku:custom-oped-marks',
+  'kz-settings-open-sections',
+])
+
+function sanitizeAccountData(value: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (!ACCOUNT_DATA_KEYS.has(key)) continue
+    if (key === 'animaku-settings' && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const settings = { ...(raw as Record<string, unknown>) }
+      delete settings.bangumiToken
+      clean[key] = settings
+    } else {
+      clean[key] = raw
+    }
+  }
+  return clean
+}
+
+app.get('/api/account/data', async (c) => {
+  const context = await requireAccountUser(c)
+  if (!context) {
+    return c.env.DB
+      ? c.json({ ok: false, error: 'unauthorized', message: '请先登录' }, 401)
+      : c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  }
+  const row = await context.db.prepare('SELECT payload, version, updated_at FROM account_data WHERE user_id = ? LIMIT 1').bind(context.user.id).first<{ payload: string; version: number; updated_at: number }>()
+  let data: Record<string, unknown> = {}
+  try {
+    const parsed = row?.payload ? JSON.parse(row.payload) : {}
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = sanitizeAccountData(parsed as Record<string, unknown>)
+  } catch { /* use empty payload */ }
+  return c.json({ ok: true, data, version: row?.version || 1, updatedAt: row?.updated_at || 0 })
+})
+
+app.put('/api/account/data', async (c) => {
+  const context = await requireAccountUser(c)
+  if (!context) {
+    return c.env.DB
+      ? c.json({ ok: false, error: 'unauthorized', message: '请先登录' }, 401)
+      : c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  }
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const data = body.data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return c.json({ ok: false, error: 'invalid_data', message: '云端数据格式无效' }, 400)
+  }
+  const cleanData = sanitizeAccountData(data as Record<string, unknown>)
+  let payload: string
+  try {
+    payload = JSON.stringify(cleanData)
+  } catch {
+    return c.json({ ok: false, error: 'invalid_data', message: '云端数据无法序列化' }, 400)
+  }
+  if (new TextEncoder().encode(payload).byteLength > 800_000) {
+    return c.json({ ok: false, error: 'data_too_large', message: '云端数据超过 800KB 限制' }, 413)
+  }
+  const now = Date.now()
+  await context.db.prepare(
+    `INSERT INTO account_data (user_id, payload, version, updated_at)
+     VALUES (?, ?, 1, ?)
+     ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, version = account_data.version + 1, updated_at = excluded.updated_at`,
+  ).bind(context.user.id, payload, now).run()
+  const saved = await context.db.prepare('SELECT version FROM account_data WHERE user_id = ? LIMIT 1').bind(context.user.id).first<{ version: number }>()
+  return c.json({ ok: true, version: saved?.version || 1, updatedAt: now })
+})
+
 function isAdmin(c: { env: WorkerBindings; req: { header: (name: string) => string | undefined } }) {
   return Boolean(c.env.ADMIN_SECRET && c.req.header('X-Admin-Secret') === c.env.ADMIN_SECRET)
 }
 
 app.post('/api/admin/verify', (c) => isAdmin(c) ? c.json({ ok: true }) : c.json({ ok: false, error: 'unauthorized' }, 401))
+app.get('/api/admin/accounts', async (c) => {
+  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
+  const result = await c.env.DB.prepare(
+    `SELECT id, username, role, disabled, created_at, last_login_at
+       FROM account_users
+      ORDER BY created_at DESC
+      LIMIT 500`,
+  ).all<{
+    id: string
+    username: string
+    role: 'user' | 'admin'
+    disabled: number
+    created_at: number
+    last_login_at: number | null
+  }>()
+  return c.json({ ok: true, users: (result.results || []).map((user) => ({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    disabled: Boolean(user.disabled),
+    createdAt: user.created_at,
+    lastLoginAt: user.last_login_at || null,
+  })) })
+})
+app.post('/api/admin/accounts/:id/status', async (c) => {
+  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+  const disabled = Boolean(body.disabled)
+  const result = await c.env.DB.prepare('UPDATE account_users SET disabled = ?, updated_at = ? WHERE id = ?').bind(disabled ? 1 : 0, Date.now(), c.req.param('id')).run()
+  if (!Number(result.meta?.changes || 0)) return c.json({ ok: false, error: 'not_found', message: '账号不存在' }, 404)
+  return c.json({ ok: true, disabled })
+})
+app.delete('/api/admin/accounts/:id', async (c) => {
+  if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
+  const id = c.req.param('id')
+  await c.env.DB.prepare('DELETE FROM account_sessions WHERE user_id = ?').bind(id).run()
+  await c.env.DB.prepare('DELETE FROM account_data WHERE user_id = ?').bind(id).run()
+  const result = await c.env.DB.prepare('DELETE FROM account_users WHERE id = ?').bind(id).run()
+  if (!Number(result.meta?.changes || 0)) return c.json({ ok: false, error: 'not_found', message: '账号不存在' }, 404)
+  return c.json({ ok: true })
+})
 app.post('/api/admin/site/config', async (c) => {
   if (!isAdmin(c)) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)

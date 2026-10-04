@@ -32,6 +32,7 @@ import {
   useCustomOpedStore,
 } from '../lib/custom-oped-store'
 import { fetchBangumiOpedDetail } from '../lib/bangumi-oped'
+import { api } from '../lib/api'
 import {
   createLocalDataBackup,
   restoreLocalDataBackup,
@@ -1491,6 +1492,7 @@ function AdminPanelSection({
   const resetIcon = useSiteConfigStore((s) => s.resetIcon)
   const resetAllConfig = useSiteConfigStore((s) => s.resetAllConfig)
   const triggerIndexNow = useSiteConfigStore((s) => s.triggerIndexNow)
+  const adminSecret = useSiteConfigStore((s) => s.adminSecret)
 
   // 认证输入
   const [secretInput, setSecretInput] = useState('')
@@ -1515,6 +1517,18 @@ function AdminPanelSection({
   // IndexNow 运维
   const [isIndexing, setIsIndexing] = useState(false)
   const [indexMsg, setIndexMsg] = useState('')
+
+  // 云端账号管理
+  const [accountUsers, setAccountUsers] = useState<Array<{
+    id: string
+    username: string
+    role: 'user' | 'admin'
+    disabled: boolean
+    createdAt: number
+    lastLoginAt: number | null
+  }>>([])
+  const [accountMsg, setAccountMsg] = useState('')
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
 
   useEffect(() => {
     setNameInput(siteName)
@@ -1665,6 +1679,51 @@ function AdminPanelSection({
       setIndexMsg(`❌ 推送异常: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setIsIndexing(false)
+    }
+  }
+
+  const loadAccountUsers = async () => {
+    setIsLoadingAccounts(true)
+    setAccountMsg('')
+    try {
+      const result = await api<{ ok: boolean; users: typeof accountUsers }>('/api/admin/accounts', {
+        headers: { 'X-Admin-Secret': adminSecret },
+      })
+      setAccountUsers(result.users || [])
+    } catch (err) {
+      setAccountMsg(`加载账号失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsLoadingAccounts(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isAdminUnlocked) void loadAccountUsers()
+  }, [isAdminUnlocked])
+
+  const setAccountDisabled = async (id: string, disabled: boolean) => {
+    try {
+      await api(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
+        method: 'POST',
+        headers: { 'X-Admin-Secret': adminSecret },
+        body: JSON.stringify({ disabled }),
+      })
+      setAccountUsers((users) => users.map((user) => user.id === id ? { ...user, disabled } : user))
+    } catch (err) {
+      setAccountMsg(`更新账号失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  const deleteAccount = async (id: string, username: string) => {
+    if (!confirm(`确定删除账号“${username}”吗？该账号的云端数据和会话也会被清除。`)) return
+    try {
+      await api(`/api/admin/accounts/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Secret': adminSecret },
+      })
+      setAccountUsers((users) => users.filter((user) => user.id !== id))
+    } catch (err) {
+      setAccountMsg(`删除账号失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -1921,6 +1980,37 @@ function AdminPanelSection({
                 </button>
                 {indexMsg ? <span className="text-xs text-[var(--kz-fg-muted)]">{indexMsg}</span> : null}
               </div>
+            </div>
+
+            {/* 云端账号管理 */}
+            <div className="space-y-3 pt-3 border-t border-[var(--kz-border)]/40">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-bold text-[var(--kz-fg)] flex items-center gap-1.5">
+                  <span>☁️</span> 云端账号管理
+                </div>
+                <button type="button" onClick={() => void loadAccountUsers()} disabled={isLoadingAccounts} className="rounded-lg border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-2.5 py-1 text-[11px] text-[var(--kz-fg-muted)] hover:border-[var(--kz-accent)] hover:text-[var(--kz-accent)] disabled:opacity-50">
+                  {isLoadingAccounts ? '刷新中…' : '刷新列表'}
+                </button>
+              </div>
+              <p className="text-[11px] leading-relaxed text-[var(--kz-fg-dim)]">可查看注册账号、暂停或恢复登录。删除会同时清除该账号的云端数据。</p>
+              {accountUsers.length === 0 ? (
+                <p className="rounded-xl bg-[var(--kz-bg-soft)] p-3 text-xs text-[var(--kz-fg-dim)]">暂无账号</p>
+              ) : (
+                <div className="space-y-2">
+                  {accountUsers.map((account) => (
+                    <div key={account.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--kz-border)]/60 bg-[var(--kz-bg-soft)]/50 p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-[var(--kz-fg)]">{account.username}</div>
+                        <div className="mt-0.5 text-[10px] text-[var(--kz-fg-dim)]">注册于 {new Date(account.createdAt).toLocaleString()} {account.lastLoginAt ? `· 最近登录 ${new Date(account.lastLoginAt).toLocaleString()}` : '· 尚未登录'}</div>
+                      </div>
+                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] ${account.disabled ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{account.disabled ? '已暂停' : '正常'}</span>
+                      <button type="button" onClick={() => void setAccountDisabled(account.id, !account.disabled)} className="rounded-lg border border-[var(--kz-border)] px-2 py-1 text-[11px] text-[var(--kz-fg-muted)] hover:border-[var(--kz-accent)] hover:text-[var(--kz-accent)]">{account.disabled ? '恢复' : '暂停'}</button>
+                      <button type="button" onClick={() => void deleteAccount(account.id, account.username)} className="rounded-lg border border-rose-500/30 px-2 py-1 text-[11px] text-rose-400 hover:bg-rose-500/10">删除</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {accountMsg && <p className="text-xs text-[var(--kz-fg-muted)]">{accountMsg}</p>}
             </div>
 
             {/* 退出管理 */}

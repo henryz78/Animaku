@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../lib/api'
+import { syncCloudData } from '../lib/cloud-data'
 import { useAccountStore } from '../stores/account'
 
 type Mode = 'login' | 'register'
@@ -19,11 +20,34 @@ export function AccountPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
   const [message, setMessage] = useState('')
+  const syncAttempted = useRef(false)
 
   useEffect(() => {
     void init()
   }, [init])
+
+  const runSync = async () => {
+    if (!user || syncBusy) return
+    setSyncBusy(true)
+    setSyncMessage('正在合并本机与云端数据…')
+    try {
+      const result = await syncCloudData()
+      setSyncMessage(`已同步 ${result.keys} 类数据`)
+    } catch (error) {
+      setSyncMessage(error instanceof ApiError ? error.message : '同步失败，请稍后重试')
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!initialized || !user || syncAttempted.current) return
+    syncAttempted.current = true
+    void runSync()
+  }, [initialized, user])
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -36,6 +60,12 @@ export function AccountPage() {
     try {
       if (mode === 'register') await register(username.trim(), password)
       else await login(username.trim(), password)
+      try {
+        await syncCloudData()
+      } catch {
+        // Account creation/login remains successful if a later sync request
+        // is interrupted; the user can retry from the account page.
+      }
       navigate('/settings')
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : '请求失败，请稍后重试')
@@ -50,9 +80,11 @@ export function AccountPage() {
         <div className="kz-panel p-6 sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--kz-accent)]">云端账号</p>
           <h1 className="mt-2 text-2xl font-bold text-[var(--kz-fg)]">已登录</h1>
-          <p className="mt-2 text-sm text-[var(--kz-fg-muted)]">当前账号：{user.username}。登录后即可在后续版本同步观看记录、收藏和设置。</p>
+          <p className="mt-2 text-sm text-[var(--kz-fg-muted)]">当前账号：{user.username}。登录后可以同步观看记录、收藏和设置。</p>
+          {syncMessage && <p className="mt-3 text-sm text-[var(--kz-accent)]">{syncMessage}</p>}
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to="/settings" className="kz-btn-primary">返回设置</Link>
+            <button type="button" className="kz-btn-secondary" disabled={syncBusy} onClick={() => void runSync()}>{syncBusy ? '同步中…' : '立即同步数据'}</button>
             <button type="button" className="kz-btn-secondary" onClick={() => void logout()}>退出登录</button>
           </div>
         </div>
