@@ -16,6 +16,7 @@ import {
   parseDanmakuXml,
   deduplicateDanmakuIncremental,
   titleSimilarity,
+  type BangumiEpisode,
   type DanmakuAnime,
   type DanmakuComment,
   type DanmakuEpisode,
@@ -44,6 +45,8 @@ export type UseDanmakuSessionOpts = {
   bangumiId: number
   /** Episode number (0-based or 1-based) for dandan episode pick */
   episode: number
+  /** Official Bangumi episode list, used to align global sequel numbering with local danmaku numbering. */
+  officialEpisodes?: BangumiEpisode[]
   /** Primary title for search / status */
   title: string
   /** Video source plugin name to isolate danmakuOffset per source */
@@ -97,6 +100,50 @@ type CachedCommentsPayload = {
 }
 
 /**
+ * Resolve a Dandan episode from the canonical Bangumi episode number.
+ *
+ * Bangumi keeps sequel/season numbering continuous (for example 67..77),
+ * while Dandan resets each mapped anime to local numbering (1..11/19).
+ * When the official list is available, its position is the only stable
+ * bridge between those two numbering systems. For ordinary single-season
+ * titles this produces the same result as the old numeric matcher.
+ */
+function resolveDanmakuEpisode(
+  episodes: DanmakuEpisode[],
+  targetEpisode: number,
+  officialEpisodes?: BangumiEpisode[],
+): DanmakuEpisode | undefined {
+  if (!episodes.length) return undefined
+
+  const officialMain = (officialEpisodes || [])
+    .filter((ep) => ep.type === 0 && Number.isFinite(ep.sort))
+    .slice()
+    .sort((a, b) => a.sort - b.sort)
+  const officialIndex = officialMain.findIndex((ep) => ep.sort === targetEpisode)
+
+  if (officialIndex >= 0) {
+    // A real episode 0 is part of the positional sequence when the official
+    // list starts at 0. Otherwise ignore a possible Dandan special/preview
+    // numbered 0 so the first main episode still maps to position 0.
+    const includeZero = officialMain[0]?.sort === 0
+    const positional = episodes.filter((ep) => {
+      const parsed = parseEpisodeNumber(ep.episodeTitle).epNum
+      return parsed !== null && Number.isFinite(parsed) && (includeZero || parsed >= 1)
+    })
+    return positional[officialIndex] || (!positional.length ? episodes[officialIndex] : undefined)
+  }
+
+  // No official row for this target (offline metadata, manual offset, or a
+  // search result from another anime): retain the local numeric behavior.
+  const parsedNums = episodes
+    .map((ep) => parseEpisodeNumber(ep.episodeTitle).epNum)
+    .filter((n): n is number => n !== null && Number.isFinite(n))
+  const maxKnownEp = parsedNums.length > 0 ? Math.max(...parsedNums) : episodes.length
+  const localTarget = Math.max(0, Math.min(maxKnownEp, targetEpisode))
+  return matchDanmakuEpisode(episodes, localTarget)
+}
+
+/**
  * Shared danmaku panel + auto-match used by PlayPage and SubjectPage.
  * Keeps pools / search / BV / XML / generation cancel in one place.
  */
@@ -104,6 +151,7 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
   const {
     bangumiId,
     episode,
+    officialEpisodes,
     title,
     pluginName = '',
     titleRefs,
@@ -494,19 +542,18 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
           return
         }
 
-        const parsedNums = (meta.episodes || [])
-          .map((e) => parseEpisodeNumber(e.episodeTitle).epNum)
-          .filter((n): n is number => n !== null && Number.isFinite(n))
-        const maxKnownEp = parsedNums.length > 0 ? Math.max(...parsedNums) : (meta.episodes.length || 999)
-
         const rawTargetEp = episode + danmakuOffset
-        const effectiveTargetEp = Math.max(0, Math.min(maxKnownEp, rawTargetEp))
+        const effectiveTargetEp = Math.max(0, rawTargetEp)
 
-        let matchedEp = matchDanmakuEpisode(meta.episodes, effectiveTargetEp)
+        let matchedEp = resolveDanmakuEpisode(
+          meta.episodes,
+          effectiveTargetEp,
+          officialEpisodes,
+        )
 
         // 3. Fallback: If target episode is missing from cached episodes (e.g. newly aired episode within 12h cache TTL),
         // automatically trigger a bypass-cache refresh from dandan upstream.
-        if (!matchedEp && (effectiveTargetEp > meta.episodes.length || !meta.episodes.some((e) => matchDanmakuEpisode([e], effectiveTargetEp)))) {
+        if (!matchedEp) {
           try {
             let refreshedEpisodes: DanmakuEpisode[] = []
             if (bangumiId) {
@@ -525,7 +572,11 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
               meta.episodes = refreshedEpisodes
               subjectMetaRef.current = meta
               setEpisodes(refreshedEpisodes)
-              matchedEp = matchDanmakuEpisode(refreshedEpisodes, effectiveTargetEp)
+              matchedEp = resolveDanmakuEpisode(
+                refreshedEpisodes,
+                effectiveTargetEp,
+                officialEpisodes,
+              )
             }
           } catch {
             /* Keep previous matched attempt */
@@ -563,7 +614,15 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
         /* ignore */
       }
     }
-  }, [autoMatch, bangumiId, episode, danmakuOffset, matchKey, loadCommentsByEpisodeId])
+  }, [
+    autoMatch,
+    bangumiId,
+    episode,
+    danmakuOffset,
+    matchKey,
+    officialEpisodes,
+    loadCommentsByEpisodeId,
+  ])
 
   const handleEpisodeChange = useCallback(
     async (epId: number) => {
@@ -602,12 +661,8 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
       setStatus('已重置弹幕偏移')
       const meta = subjectMetaRef.current
       if (meta?.episodes?.length) {
-        const parsedNums = meta.episodes
-          .map((e) => parseEpisodeNumber(e.episodeTitle).epNum)
-          .filter((n): n is number => n !== null && Number.isFinite(n))
-        const maxKnownEp = parsedNums.length > 0 ? Math.max(...parsedNums) : meta.episodes.length
-        const targetEp = Math.max(0, Math.min(maxKnownEp, episode))
-        const ep = matchDanmakuEpisode(meta.episodes, targetEp)
+        const targetEp = Math.max(0, episode)
+        const ep = resolveDanmakuEpisode(meta.episodes, targetEp, officialEpisodes)
         if (ep) {
           await loadCommentsByEpisodeId(ep.episodeId, {
             targetEpNum: targetEp,
@@ -617,7 +672,14 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
         }
       }
     }
-  }, [bangumiId, pluginName, episode, setStoreDanmakuOffset, loadCommentsByEpisodeId])
+  }, [
+    bangumiId,
+    pluginName,
+    episode,
+    officialEpisodes,
+    setStoreDanmakuOffset,
+    loadCommentsByEpisodeId,
+  ])
 
   const handleAnimeChange = useCallback(
     async (id: number, list?: DanmakuAnime[]) => {

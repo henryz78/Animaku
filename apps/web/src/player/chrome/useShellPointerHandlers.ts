@@ -197,7 +197,7 @@ export function useShellPointerHandlers(
           suppressNextMobileClickRef.current = false
         }, 700)
         lastTapAtRef.current = 0
-        apiRef.current.onTemporarySpeedStart?.(2)
+        apiRef.current.onTemporarySpeedStart?.(1.5)
         apiRef.current.bumpBar()
       }, MOBILE_LONG_PRESS_MS)
     },

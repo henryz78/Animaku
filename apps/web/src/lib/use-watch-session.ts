@@ -581,6 +581,7 @@ export function useWatchSession(bangumiId: number): WatchSession {
   const dm = useDanmakuSession({
     bangumiId,
     episode: episode?.episode ?? (qEp !== undefined && qEp >= 0 ? qEp : 1),
+    officialEpisodes: bgmEpisodesQuery.data?.data,
     title,
     pluginName: selection?.plugin.name || qPlugin || undefined,
     titleRefs,
