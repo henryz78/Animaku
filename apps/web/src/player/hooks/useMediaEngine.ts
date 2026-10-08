@@ -944,6 +944,8 @@ export function useMediaEngine({
     }
 
     let lastUiFloor = -1
+    let lastPlaybackTime = video.currentTime
+    let waitingForPlayback = false
     const onTime = () => {
       const d = video.duration
       const t = video.currentTime
@@ -958,9 +960,17 @@ export function useMediaEngine({
         pendingSeekTargetRef.current = null
       }
 
+      // Safari can emit timeupdate without advancing while it waits for data.
+      // A loaded current frame alone does not prove playback has resumed.
+      const playbackAdvanced =
+        !video.paused &&
+        !video.seeking &&
+        !isSeekingRef.current &&
+        t > lastPlaybackTime
+      lastPlaybackTime = t
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         setSeekingUi(false)
-        hideBufferingUi()
+        if (playbackAdvanced) hideBufferingUi()
         isSeekingRef.current = false
       }
 
@@ -990,6 +1000,7 @@ export function useMediaEngine({
         return
       }
 
+      hideBufferingUi()
       setPaused(true)
       if (showBarRef) showBarRef.current = true
       setShowBarRef.current?.(true)
@@ -1000,7 +1011,7 @@ export function useMediaEngine({
     const onPlay = () => {
       setPaused(false)
       setLoading(false)
-      hideBufferingUi()
+      // play is an intent to start; playing confirms data is actually playing.
       bumpBarRef.current?.()
     }
 
@@ -1039,6 +1050,7 @@ export function useMediaEngine({
     const onSeeking = () => {
       isSeekingRef.current = true
       lastSkipTRef.current = video.currentTime
+      lastPlaybackTime = video.currentTime
       try {
         const t = video.currentTime
         let covered = false
@@ -1058,12 +1070,13 @@ export function useMediaEngine({
       pendingSeekTargetRef.current = null
       isSeekingRef.current = false
       lastSkipTRef.current = video.currentTime
+      lastPlaybackTime = video.currentTime
       if (
         video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ||
         bufferedAhead(video) > 0
       ) {
         setSeekingUi(false)
-        hideBufferingUi()
+        if (video.paused || !waitingForPlayback) hideBufferingUi()
         return
       }
       setSeekingUi(true)
@@ -1079,42 +1092,45 @@ export function useMediaEngine({
     }
     hideBufferingUi = () => {
       clearStallShowTimer()
+      waitingForPlayback = false
+      lastPlaybackTime = video.currentTime
       setBufferingUi(false)
     }
     const isUnplayable = () => {
       const ahead = bufferedAhead(video)
       return (
         ahead < 0.2 ||
-        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+        video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
       )
     }
 
     const armStallSpinner = (force = false) => {
-      if (userPausedRef.current) return
+      if (userPausedRef.current || video.paused || video.ended) return
       if (!force && !isUnplayable()) return
       if (force) {
         clearStallShowTimer()
+        waitingForPlayback = true
+        lastPlaybackTime = video.currentTime
         setBufferingUi(true)
         return
       }
       if (stallShowTimer) return
       stallShowTimer = window.setTimeout(() => {
         stallShowTimer = 0
-        if (!alive() || userPausedRef.current) return
+        if (!alive() || userPausedRef.current || video.paused || video.ended) return
         if (!isUnplayable()) return
         if (!video.paused && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
           return
         }
+        waitingForPlayback = true
+        lastPlaybackTime = video.currentTime
         setBufferingUi(true)
       }, STALL_SPINNER_DELAY_MS)
     }
 
     const onWaiting = () => {
-      if (userPausedRef.current) return
-      const ahead = bufferedAhead(video)
-      if (ahead >= 0.35 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        return
-      }
+      // waiting is authoritative even when buffered audio or an unusable tail
+      // makes bufferedAhead appear sufficient for the current video frame.
       armStallSpinner(true)
     }
 
@@ -1127,7 +1143,7 @@ export function useMediaEngine({
     const onCanPlay = () => {
       pendingSeekTargetRef.current = null
       setSeekingUi(false)
-      hideBufferingUi()
+      if (video.paused || !waitingForPlayback) hideBufferingUi()
       isSeekingRef.current = false
       onNoteDanmakuReadyRef.current?.()
       tryApplyInitialResumeRef.current?.()
