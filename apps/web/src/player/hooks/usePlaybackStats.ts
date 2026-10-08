@@ -3,6 +3,7 @@ import type Hls from 'hls.js'
 import { STATS_VALID_PLAY_THRESHOLD_SEC } from '@animaku/shared'
 import { statsApi } from '../../lib/api'
 import { useWatchedStore } from '../../stores/watched'
+import { WATCH_PROGRESS_FLUSH_EVENT } from '../../lib/watch-history'
 
 export interface UsePlaybackStatsOptions {
   videoRef: RefObject<HTMLVideoElement | null>
@@ -30,6 +31,11 @@ export function usePlaybackStats({
   const playSecAccumulatedRef = useRef<number>(0)
   const playViewReportedRef = useRef<boolean>(false)
   const lastPlaySecTickRef = useRef<number>(0)
+  const lastProgressRef = useRef<{
+    time: number
+    duration: number
+    save: typeof onProgress
+  } | null>(null)
 
   const [fps, setFps] = useState(0)
   const [droppedFrames, setDroppedFrames] = useState(0)
@@ -48,7 +54,35 @@ export function usePlaybackStats({
     playSecAccumulatedRef.current = 0
     playViewReportedRef.current = false
     lastPlaySecTickRef.current = 0
-  }, [bangumiId, episodeNumber, episodeIndex, activeSrc])
+    lastSaveRef.current = 0
+    lastProgressRef.current = null
+
+    const flush = (readVideo: boolean) => {
+      const progress = lastProgressRef.current
+      if (!playViewReportedRef.current || !progress?.save) return
+      const video = readVideo ? videoRef.current : null
+      const time = video && Number.isFinite(video.currentTime) ? video.currentTime : progress.time
+      const duration = video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : progress.duration
+      if (!Number.isFinite(time) || time < 0 || !Number.isFinite(duration) || duration <= 0) return
+      progress.time = time
+      progress.duration = duration
+      progress.save(time, duration)
+      window.dispatchEvent(new Event(WATCH_PROGRESS_FLUSH_EVENT))
+    }
+    const onHide = () => flush(true)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush(true)
+    }
+    window.addEventListener('pagehide', onHide)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      // Media teardown may already have reset currentTime or detached the ref.
+      // Keep the snapshot's callback so an old episode is never saved as the new one.
+      flush(false)
+      window.removeEventListener('pagehide', onHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [bangumiId, episodeNumber, episodeIndex, activeSrc, videoRef])
 
   // Periodic FPS & quality sampling
   useEffect(() => {
@@ -93,6 +127,9 @@ export function usePlaybackStats({
     const video = videoRef.current
     if (!video) return
     const now = Date.now()
+    if (Number.isFinite(t) && t >= 0 && Number.isFinite(d) && d > 0) {
+      lastProgressRef.current = { time: t, duration: d, save: onProgressRef.current }
+    }
 
     // 累加实际有效播放时长并在满 15s 时上报播放统计、标记已看并首次正式写入观看历史
     if (
@@ -140,8 +177,10 @@ export function usePlaybackStats({
    * 在暂停时调用：仅在满 15s 后保存当前进度
    */
   const handlePauseStats = (t: number, d: number) => {
-    if (playViewReportedRef.current && Number.isFinite(d) && d > 0) {
+    if (playViewReportedRef.current && Number.isFinite(t) && t >= 0 && Number.isFinite(d) && d > 0) {
+      lastProgressRef.current = { time: t, duration: d, save: onProgressRef.current }
       onProgressRef.current?.(t, d)
+      window.dispatchEvent(new Event(WATCH_PROGRESS_FLUSH_EVENT))
     }
   }
 
@@ -149,6 +188,8 @@ export function usePlaybackStats({
    * 在完播（ended）时调用：标记已看
    */
   const handleEndedStats = () => {
+    const video = videoRef.current
+    if (video) handlePauseStats(video.currentTime, video.duration)
     if (bangumiId && bangumiId > 0 && typeof episodeNumber === 'number') {
       useWatchedStore.getState().markWatched(bangumiId, episodeNumber)
     }

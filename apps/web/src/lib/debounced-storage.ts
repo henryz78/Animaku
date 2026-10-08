@@ -41,6 +41,10 @@ export function createDebouncedStorage(delayMs: number): StateStorage {
     },
     setItem: (name, value) => {
       pending = { name, value }
+      if (delayMs <= 0) {
+        flush()
+        return
+      }
       if (timer !== undefined) clearTimeout(timer)
       timer = setTimeout(flush, delayMs)
     },

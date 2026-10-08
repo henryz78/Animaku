@@ -4,6 +4,7 @@ import { Layout } from './components/Layout'
 import { LoadingState } from './components/ui'
 import { routeImports } from './lib/route-preload'
 import { syncCloudData } from './lib/cloud-data'
+import { WATCH_PROGRESS_FLUSH_EVENT } from './lib/watch-history'
 import { useAccountStore } from './stores/account'
 
 // Keep HomePage and NotFoundPage in the initial chunk for instantaneous render
@@ -36,20 +37,33 @@ function AccountSyncBridge() {
   useEffect(() => {
     if (!user) return
     let busy = false
+    let pending = false
+    let active = true
     const sync = async () => {
-      if (busy) return
+      if (!active) return
+      if (busy) { pending = true; return }
       busy = true
       try { await syncCloudData() } catch { /* offline use remains fully functional */ }
-      finally { busy = false }
+      finally {
+        busy = false
+        if (pending && active) {
+          pending = false
+          void sync()
+        }
+      }
     }
     const timer = window.setInterval(() => void sync(), 60_000)
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void sync()
+      void sync()
     }
+    const onProgressFlush = () => void sync()
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener(WATCH_PROGRESS_FLUSH_EVENT, onProgressFlush)
     return () => {
+      active = false
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener(WATCH_PROGRESS_FLUSH_EVENT, onProgressFlush)
     }
   }, [user])
 

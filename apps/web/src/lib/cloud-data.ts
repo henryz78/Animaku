@@ -5,6 +5,7 @@ import { useSearchHistoryStore } from '../stores/search-history'
 import { useSettingsStore } from '../stores/settings'
 import { useSourceBindingStore } from '../stores/source-bindings'
 import { useWatchedStore } from '../stores/watched'
+import { mergeWatchHistory } from './watch-history'
 
 /**
  * Only these local stores are eligible for cloud sync. Authentication tokens,
@@ -42,14 +43,33 @@ function sanitizeSettings(value: unknown): unknown {
 }
 
 function sanitizeValue(key: string, value: unknown): unknown {
+  if (key === 'animaku-history' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const snapshot = value as Record<string, unknown>
+    const state = snapshot.state
+    if (state && typeof state === 'object' && !Array.isArray(state)) {
+      const history = state as Record<string, unknown>
+      if (Array.isArray(history.items)) {
+        return { ...snapshot, state: { ...history, items: mergeWatchHistory(history.items) } }
+      }
+    }
+  }
   return key === 'animaku-settings' ? sanitizeSettings(value) : value
 }
 
-export function collectCloudData(storage: Storage = window.localStorage): CloudData {
+export function collectCloudData(storage?: Storage): CloudData {
+  const source = storage ?? window.localStorage
   const result: CloudData = {}
   for (const key of CLOUD_DATA_KEYS) {
-    const parsed = parseStored(storage.getItem(key))
+    const parsed = parseStored(source.getItem(key))
     if (parsed !== undefined) result[key] = sanitizeValue(key, parsed)
+  }
+  if (!storage) {
+    // The running player owns the freshest progress, including a final save
+    // that could not reach disk (e.g. storage quota). Never upload an old copy.
+    result['animaku-history'] = {
+      version: 0,
+      state: { items: mergeWatchHistory(useHistoryStore.getState().items) },
+    }
   }
   return result
 }
@@ -67,7 +87,7 @@ function dedupeArray(items: unknown[]): unknown[] {
   return result
 }
 
-function mergePersistedState(left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> {
+function mergePersistedState(left: Record<string, unknown>, right: Record<string, unknown>, storeKey: string): Record<string, unknown> {
   const leftState = left.state
   const rightState = right.state
   if (!leftState || typeof leftState !== 'object' || Array.isArray(leftState) || !rightState || typeof rightState !== 'object' || Array.isArray(rightState)) {
@@ -77,7 +97,15 @@ function mergePersistedState(left: Record<string, unknown>, right: Record<string
   for (const key of ['items', 'queries', 'plugins', 'pluginOrder']) {
     const localItems = (leftState as Record<string, unknown>)[key]
     const remoteItems = (rightState as Record<string, unknown>)[key]
-    if (Array.isArray(localItems) && Array.isArray(remoteItems)) mergedState[key] = dedupeArray([...remoteItems, ...localItems])
+    if (storeKey === 'animaku-history' && key === 'items') {
+      // Compare save times, not positions: rewinding or rewatching is valid.
+      mergedState[key] = mergeWatchHistory(
+        Array.isArray(localItems) ? localItems : [],
+        Array.isArray(remoteItems) ? remoteItems : [],
+      )
+    } else if (Array.isArray(localItems) && Array.isArray(remoteItems)) {
+      mergedState[key] = dedupeArray([...remoteItems, ...localItems])
+    }
   }
   for (const key of ['records', 'bindings']) {
     const localMap = (leftState as Record<string, unknown>)[key]
@@ -97,7 +125,7 @@ export function mergeCloudData(local: CloudData, remote: CloudData): CloudData {
     const hasRemote = Object.prototype.hasOwnProperty.call(remote, key)
     if (!hasLocal && !hasRemote) continue
     if (!hasLocal) {
-      merged[key] = remote[key]
+      merged[key] = sanitizeValue(key, remote[key])
       continue
     }
     if (!hasRemote) {
@@ -111,7 +139,7 @@ export function mergeCloudData(local: CloudData, remote: CloudData): CloudData {
     } else if (left && typeof left === 'object' && right && typeof right === 'object' && !Array.isArray(left) && !Array.isArray(right)) {
       // Persisted Zustand stores keep user data under `state`; merge the
       // collections/maps there instead of dropping another device's entries.
-      merged[key] = mergePersistedState(left as Record<string, unknown>, right as Record<string, unknown>)
+      merged[key] = mergePersistedState(left as Record<string, unknown>, right as Record<string, unknown>, key)
     } else {
       merged[key] = left
     }
@@ -156,7 +184,7 @@ async function rehydrateStores(): Promise<void> {
   ])
 }
 
-export async function syncCloudData(): Promise<{ keys: number; remoteUpdatedAt: number }> {
+async function performCloudSync(): Promise<{ keys: number; remoteUpdatedAt: number }> {
   const remote = await api<{ data?: CloudData; updatedAt?: number }>('/api/account/data')
   const local = collectCloudData()
   const merged = mergeCloudData(local, remote.data || {})
@@ -167,4 +195,15 @@ export async function syncCloudData(): Promise<{ keys: number; remoteUpdatedAt: 
     body: JSON.stringify({ data: merged }),
   })
   return { keys: Object.keys(merged).length, remoteUpdatedAt: remote.updatedAt || 0 }
+}
+
+let syncInFlight: ReturnType<typeof performCloudSync> | null = null
+
+export function syncCloudData(): ReturnType<typeof performCloudSync> {
+  // Account-page and background sync share one request so an older response
+  // cannot overwrite a newer upload from this browser.
+  if (!syncInFlight) {
+    syncInFlight = performCloudSync().finally(() => { syncInFlight = null })
+  }
+  return syncInFlight
 }

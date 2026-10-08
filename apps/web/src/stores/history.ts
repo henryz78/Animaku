@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { WatchHistoryEntry } from '@animaku/shared'
 import { historyId } from '@animaku/shared'
+import { MAX_HISTORY_ITEMS, mergeWatchHistory } from '../lib/watch-history'
 import { createDebouncedStorage } from '../lib/debounced-storage'
 import { migrateLocalStorageKey } from '../lib/storage'
 
@@ -9,11 +10,6 @@ migrateLocalStorageKey('animaku-history', [
   'aniku-history',
   'kazumi-web-history',
 ])
-
-/** Cap persisted history rows */
-const MAX_ITEMS = 200
-/** Debounce localStorage writes (progress ticks are frequent) */
-const PERSIST_DEBOUNCE_MS = 12_000
 
 interface HistoryState {
   items: WatchHistoryEntry[]
@@ -57,7 +53,7 @@ export const useHistoryStore = create<HistoryState>()(
             }
           }
           return {
-            items: [full, ...rest].slice(0, MAX_ITEMS),
+            items: [full, ...rest].slice(0, MAX_HISTORY_ITEMS),
           }
         })
       },
@@ -90,33 +86,16 @@ export const useHistoryStore = create<HistoryState>()(
     }),
     {
       name: 'animaku-history',
-      storage: createJSONStorage(() => createDebouncedStorage(PERSIST_DEBOUNCE_MS)),
+      // Progress already updates only every 10s. A 12s trailing debounce never
+      // settles during playback and leaves cloud sync reading stale history.
+      storage: createJSONStorage(() => createDebouncedStorage(0)),
       partialize: (s) => ({ items: s.items }),
       merge: (persisted, current) => {
         const p = (persisted || {}) as Partial<HistoryState>
         const rawItems = Array.isArray(p.items) ? p.items : current.items
-        // 一次性无感收敛历史旧数据：同一番剧同一集数仅保留最新一条记录（不区分 plugin，消除同集多源冗余）
-        const seen = new Set<string>()
-        const deduplicated: WatchHistoryEntry[] = []
-        for (const item of rawItems) {
-          if (!item || !item.bangumiId) continue
-          const key = `${item.bangumiId}::ep${item.episode ?? 1}`
-          if (!seen.has(key)) {
-            seen.add(key)
-            deduplicated.push({
-              ...item,
-              id: historyId(
-                item.bangumiId,
-                item.pluginName,
-                item.episode ?? 1,
-                item.road ?? 0,
-              ),
-            })
-          }
-        }
         return {
           ...current,
-          items: deduplicated.slice(0, MAX_ITEMS),
+          items: mergeWatchHistory(rawItems),
         }
       },
     },
