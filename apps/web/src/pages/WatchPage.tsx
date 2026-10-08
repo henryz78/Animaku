@@ -24,6 +24,10 @@ import { WatchComments } from './watch/comments'
 import { BangumiMetadataPanel } from './watch/BangumiMetadataPanel'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { perfMetrics } from '../lib/performance-metrics'
+import { CacheEpisodePicker, useAutomaticCache } from '../offline/CacheEpisodePicker'
+import { playbackHealth, useOfflineStore, setPlayingCache, touchCache } from '../offline/manager'
+import { offlineProfile } from '../offline/profile'
+import { mediaUrl } from '../offline/types'
 
 /**
  * Unified subject + cinema page (Bilibili-style).
@@ -34,6 +38,11 @@ export function WatchPage() {
   const { id } = useParams()
   const bangumiId = Number(id)
   const w = useWatchSession(Number.isFinite(bangumiId) ? bangumiId : 0)
+  useAutomaticCache(w)
+  const [brokenCache, setBrokenCache] = useState('')
+  const cached = useOfflineStore((state) => state.tasks.find((task) => task.id !== brokenCache && task.owner === offlineProfile()?.id && task.status === 'ready' && task.bangumiId === bangumiId && task.episode === w.episode?.episode && task.pageUrl === w.episode?.pageUrl && task.plugin.name === w.selection?.plugin.name && task.road === w.episode?.road))
+  const cachedId = cached?.id
+  useEffect(() => { setPlayingCache(cachedId || ''); if (cachedId) void touchCache(cachedId).catch(() => {}); return () => setPlayingCache('') }, [cachedId])
   const layoutMode = useWatchLayoutMode()
 
   const token = useSettingsStore((s) => s.bangumiToken)
@@ -327,24 +336,25 @@ export function WatchPage() {
 
   const renderPlayerContent = () => {
     // 1. 媒体流已就绪：原生全功能播放器
-    if (w.mediaSrc) {
+    if (w.mediaSrc || cached) {
       return (
         <VideoPlayerSuspense
-          key={w.playerKey}
-          formatHint={w.formatHint}
+          key={cached ? cached.id : w.playerKey}
+          formatHint={cached?.format || w.formatHint}
           adBlockerMode={w.adBlockerMode}
           title={
             w.title
               ? `${w.title}${w.episode ? ` 第 ${w.episode.episode} 集` : ''}`
               : undefined
           }
-          src={w.mediaSrc}
+          src={cached ? mediaUrl(cached) : w.mediaSrc}
           initialTime={w.resumeTime}
           comments={w.dm.visibleComments}
           danmaku={w.danmakuSettings}
           player={w.playerSettings}
           onPlayerChange={w.setPlayer}
           onProgress={w.onProgress}
+          onBufferHealth={playbackHealth}
           onToggleDanmaku={() => {
             const cur = w.danmakuSettings
             const isEnabled = cur.enabled !== false
@@ -372,7 +382,7 @@ export function WatchPage() {
           hasNext={w.hasNextEpisode}
           onPrefetchNext={w.hasNextEpisode ? w.prefetchNextEpisode : undefined}
           onMediaAuthExpired={w.onMediaAuthExpired}
-          onMediaLoadFailed={w.onMediaLoadFailed}
+          onMediaLoadFailed={cached ? () => setBrokenCache(cached.id) : w.onMediaLoadFailed}
           danmakuPanel={w.dm.panel}
           hudMessage={w.hudMessage}
           bangumiId={w.bangumiId}
@@ -567,6 +577,8 @@ export function WatchPage() {
     )
 
   const epsPanel = (
+    <>
+    <CacheEpisodePicker session={w} />
     <MobileEpsSection
       bangumiId={bangumiId}
       roads={w.selection?.roads ?? []}
@@ -591,6 +603,7 @@ export function WatchPage() {
       onRefreshChapters={() => startTransition(() => void w.refreshChapters())}
       episodeFallbackImage={item ? coverOf(item, 'thumb') : undefined}
     />
+    </>
   )
 
   /* 番剧推荐模块（选集下方 B 站小横卡流） */

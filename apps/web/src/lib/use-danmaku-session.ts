@@ -109,7 +109,7 @@ type CachedCommentsPayload = {
  * bridge between those two numbering systems. For ordinary single-season
  * titles this produces the same result as the old numeric matcher.
  */
-function resolveDanmakuEpisode(
+export function resolveDanmakuEpisode(
   episodes: DanmakuEpisode[],
   targetEpisode: number,
   officialEpisodes?: BangumiEpisode[],

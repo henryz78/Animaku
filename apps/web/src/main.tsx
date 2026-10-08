@@ -6,12 +6,14 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { bootstrapPlugins } from './stores/plugins'
 import { ApiError } from './lib/api'
 import './lib/fingerprint'
+import { registerOfflineWorker } from './offline/register'
 import './index.css'
 // Player frame / placeholder sizing shared by VideoPlayer, SubjectPage
 import './player/plyr-overrides.css'
 
 // Seed built-in rules if localStorage is empty (legacy empty store, first visit)
 bootstrapPlugins()
+if (import.meta.env.PROD) void registerOfflineWorker().catch(() => {})
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -77,6 +77,7 @@ export function VideoPlayer({
   player,
   onPlayerChange,
   onProgress,
+  onBufferHealth,
   onToggleDanmaku,
   onDanmakuChange,
   onPrev,
@@ -111,6 +112,40 @@ export function VideoPlayer({
   // Local video playback override
   const [localVideo, setLocalVideo] = useState<{ url: string; name: string } | null>(null)
   const activeSrc = localVideo?.url || src
+
+  useEffect(() => {
+    if (!onBufferHealth) return
+    const video = videoRef.current
+    if (!video) return
+    let waiting = false
+    let previousTime = video.currentTime
+    const report = () => {
+      const advance = video.currentTime - previousTime
+      if (!video.seeking && advance > 0.01 && advance < 1.5) waiting = false
+      previousTime = video.currentTime
+      let ahead = 0
+      let fullyBuffered = false
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= video.currentTime + 0.1 && video.buffered.end(i) > video.currentTime) ahead = video.buffered.end(i) - video.currentTime
+        if (Number.isFinite(video.duration) && video.duration > 0 && video.buffered.start(i) <= video.currentTime + 0.1 && video.buffered.end(i) >= video.duration - 0.25) fullyBuffered = true
+      }
+      onBufferHealth({ starving: waiting || (!video.paused && video.readyState < 3), ahead, paused: video.paused && video.readyState >= 2, fullyBuffered })
+    }
+    const stalled = () => { waiting = true; report() }
+    const resumed = () => { waiting = false; report() }
+    video.addEventListener('waiting', stalled)
+    video.addEventListener('stalled', report)
+    video.addEventListener('playing', resumed)
+    video.addEventListener('canplay', resumed)
+    video.addEventListener('pause', report)
+    const timer = window.setInterval(report, 1000)
+    report()
+    return () => {
+      window.clearInterval(timer)
+      video.removeEventListener('waiting', stalled); video.removeEventListener('stalled', report)
+      video.removeEventListener('playing', resumed); video.removeEventListener('canplay', resumed); video.removeEventListener('pause', report)
+    }
+  }, [activeSrc, onBufferHealth])
 
   const prevSrcRef = useRef(src)
   useEffect(() => {

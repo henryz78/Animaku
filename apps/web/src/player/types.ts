@@ -56,6 +56,7 @@ export interface VideoPlayerProps {
   player: PlayerSettings
   onPlayerChange?: (partial: Partial<PlayerSettings>) => void
   onProgress?: (position: number, duration: number) => void
+  onBufferHealth?: (health: { starving: boolean; ahead: number; paused: boolean; fullyBuffered?: boolean }) => void
   onToggleDanmaku?: () => void
   onDanmakuChange?: (partial: Partial<DanmakuSettings>) => void
   onPrev?: () => void

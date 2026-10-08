@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
+import { rememberOfflineProfile } from '../offline/profile'
 
 export type AccountUser = {
   id: string
@@ -34,12 +35,15 @@ export const useAccountStore = create<AccountState>((set) => ({
       set({ loading: true })
       try {
         const result = await api<{ ok: boolean; user: AccountUser | null; available?: boolean }>('/api/account/me')
+        rememberOfflineProfile(result.user || null)
         set({ user: result.user || null, available: result.available !== false, initialized: true })
-      } catch {
+      } catch (error) {
         // The account is now the entry point for the application. Keep the
         // failure visible on the login screen instead of silently falling
         // back to an anonymous session.
-        set({ user: null, available: false, initialized: true })
+        const unauthenticated = error instanceof ApiError && (error.status === 401 || error.status === 403)
+        if (unauthenticated) rememberOfflineProfile(null)
+        set({ user: null, available: unauthenticated, initialized: true })
       } finally {
         set({ loading: false })
       }
@@ -57,6 +61,7 @@ export const useAccountStore = create<AccountState>((set) => ({
       body: JSON.stringify({ username, password }),
     })
     set({ user: result.user, available: true, initialized: true })
+    rememberOfflineProfile(result.user)
     return result.user
   },
 
@@ -66,6 +71,7 @@ export const useAccountStore = create<AccountState>((set) => ({
       body: JSON.stringify({ username, password }),
     })
     set({ user: result.user, available: true, initialized: true })
+    rememberOfflineProfile(result.user)
     return result.user
   },
 
@@ -73,6 +79,7 @@ export const useAccountStore = create<AccountState>((set) => ({
     try {
       await api('/api/account/logout', { method: 'POST' })
     } finally {
+      rememberOfflineProfile(null)
       set({ user: null, initialized: true })
     }
   },

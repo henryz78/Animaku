@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type { PluginMeta } from '@animaku/shared'
 import {
@@ -440,6 +441,7 @@ export function SettingsPage() {
       </div>
 
       {/* 1. 本地数据备份 */}
+      <Link to="/offline" className="block rounded-2xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] p-4"><span className="font-semibold">缓存与下载中心 →</span><p className="mt-1 text-sm text-[var(--kz-fg-muted)]">管理离线剧集、自动缓存和空间上限，导出视频文件。</p></Link>
       <CollapsibleSection
         id="data-backup"
         icon="💾"

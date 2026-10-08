@@ -6,6 +6,8 @@ import { routeImports } from './lib/route-preload'
 import { syncCloudData } from './lib/cloud-data'
 import { WATCH_PROGRESS_FLUSH_EVENT } from './lib/watch-history'
 import { useAccountStore } from './stores/account'
+import { offlineProfile } from './offline/profile'
+import { OfflineSyncBridge } from './offline/OfflineSyncBridge'
 
 // Keep HomePage and NotFoundPage in the initial chunk for instantaneous render
 import { HomePage } from './pages/HomePage'
@@ -21,6 +23,7 @@ const SettingsPage = lazy(routeImports.settings)
 const SubjectPage = lazy(routeImports.subject)
 const PlayPage = lazy(routeImports.play)
 const AccountPage = lazy(routeImports.account)
+const OfflinePage = lazy(() => import('./pages/OfflinePage').then((module) => ({ default: module.OfflinePage })))
 
 function PageFallback() {
   return (
@@ -77,6 +80,7 @@ function RequireAccount() {
   const initialized = useAccountStore((state) => state.initialized)
   const loading = useAccountStore((state) => state.loading)
   const init = useAccountStore((state) => state.init)
+  const available = useAccountStore((state) => state.available)
 
   useEffect(() => {
     if (!initialized) void init()
@@ -91,6 +95,7 @@ function RequireAccount() {
   }
 
   if (!user) {
+    if (!available && offlineProfile()) return <Navigate to="/offline" replace />
     const returnTo = `${location.pathname}${location.search}${location.hash}`
     return <Navigate to={`/account?redirect=${encodeURIComponent(returnTo)}`} replace />
   }
@@ -102,7 +107,9 @@ export default function App() {
   return (
     <>
       <AccountSyncBridge />
+      <OfflineSyncBridge />
       <Routes>
+      <Route path="offline" element={<Suspense fallback={<PageFallback />}><OfflinePage /></Suspense>} />
       <Route path="account" element={<Suspense fallback={<PageFallback />}><AccountPage /></Suspense>} />
       <Route element={<RequireAccount />}>
       <Route element={<Layout />}>

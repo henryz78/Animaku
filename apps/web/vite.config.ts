@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /** Monorepo root (…/animaku) — where `.env` / `.env.example` live */
@@ -133,6 +134,14 @@ export default defineConfig(({ mode }) => {
   return {
     envDir: repoRoot,
     plugins: [
+      {
+        name: 'animaku-offline-assets',
+        generateBundle(_options, bundle) {
+          const assets = Object.keys(bundle).filter((name) => name.startsWith('assets/'))
+          const version = createHash('sha256').update(assets.sort().join('\n')).digest('hex').slice(0, 16)
+          this.emitFile({ type: 'asset', fileName: 'offline-assets.json', source: JSON.stringify({ version, assets: assets.map((name) => '/' + name) }) })
+        },
+      },
       react(),
       tailwindcss(),
       {

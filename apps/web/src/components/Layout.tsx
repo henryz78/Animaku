@@ -26,6 +26,7 @@ const primaryLinks = [
 /** Desktop strip + mobile overflow menu. */
 const moreLinks = [
   { to: '/timeline', label: '时间表' },
+  { to: '/offline', label: '缓存与下载' },
   { to: '/settings', label: '设置' },
 ]
 
