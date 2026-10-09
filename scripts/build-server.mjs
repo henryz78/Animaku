@@ -39,6 +39,7 @@ await esbuild.build({
   target: 'node20',
   format: 'esm',
   packages: 'bundle',
+  external: ['sharp'],
   minify: true,
   legalComments: 'none',
   define: {

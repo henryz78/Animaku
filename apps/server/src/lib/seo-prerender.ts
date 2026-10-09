@@ -11,6 +11,7 @@ import {
   type BangumiItem,
 } from '@animaku/shared'
 import { config } from '../config'
+import { getSiteConfig } from './site-config'
 import { bangumiFetch } from './http'
 import {
   BANGUMI_CACHE_TTL,
@@ -173,6 +174,59 @@ export function stripTemplateHomepageSeo(html: string): string {
 }
 
 /**
+ * 动态向 HTML 模板注入自定义站点标题、标语、og:site_name 及 Favicon 缓存指纹/外链
+ */
+export function applySiteBrandingToHtml(
+  html: string,
+  options: { replaceTitle?: boolean } = { replaceTitle: true },
+): string {
+  const cfg = getSiteConfig()
+  let result = html
+
+  if (cfg.siteName) {
+    if (options.replaceTitle) {
+      const siteTitle = cfg.siteTagline ? `${cfg.siteName} - ${cfg.siteTagline}` : cfg.siteName
+      result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
+    }
+    result = result.replace(
+      /<meta\s+property=["']og:site_name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+      `<meta property="og:site_name" content="${escapeHtml(cfg.siteName)}" />`,
+    )
+    result = result.replace(
+      /<meta\s+name=["']application-name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+      `<meta name="application-name" content="${escapeHtml(cfg.siteName)}" />`,
+    )
+  }
+
+  // Favicon 与多尺寸图标统一版本指纹穿透 (保持全套图标同源同版本)
+  if (cfg.iconMode === 'url' && cfg.iconUrl) {
+    const escapedUrl = escapeHtml(cfg.iconUrl)
+    result = result
+      .replace(
+        /<link\s+[^>]*rel=["']icon["'][^>]*\/?>/gi,
+        `<link rel="icon" href="${escapedUrl}" sizes="any" />`,
+      )
+      .replace(
+        /<link\s+[^>]*rel=["']apple-touch-icon["'][^>]*\/?>/gi,
+        `<link rel="apple-touch-icon" href="${escapedUrl}" />`,
+      )
+  } else if (cfg.iconUpdatedAt) {
+    const v = `?v=${cfg.iconUpdatedAt}`
+    result = result
+      .replace(/href=["']\/favicon\.ico(?:\?[^"']*)?["']/gi, `href="/favicon.ico${v}"`)
+      .replace(/href=["']\/favicon-32x32\.png(?:\?[^"']*)?["']/gi, `href="/favicon-32x32.png${v}"`)
+      .replace(/href=["']\/favicon-16x16\.png(?:\?[^"']*)?["']/gi, `href="/favicon-16x16.png${v}"`)
+      .replace(/href=["']\/apple-touch-icon\.png(?:\?[^"']*)?["']/gi, `href="/apple-touch-icon.png${v}"`)
+      .replace(/href=["']\/android-chrome-192x192\.png(?:\?[^"']*)?["']/gi, `href="/android-chrome-192x192.png${v}"`)
+      .replace(/href=["']\/site\.webmanifest(?:\?[^"']*)?["']/gi, `href="/site.webmanifest${v}"`)
+      .replace(/content=["']\/android-chrome-512x512\.png(?:\?[^"']*)?["']/gi, `content="/android-chrome-512x512.png${v}"`)
+      .replace(/href=["']\/logo\.png(?:\?[^"']*)?["']/gi, `href="/logo.png${v}"`)
+  }
+
+  return result
+}
+
+/**
  * Returns clean HTML template with route-specific modulepreload tags injected for SPA routes.
  */
 export function getPreloadedHtmlForRoute(webRoot: string, pathname: string): string | null {
@@ -188,12 +242,14 @@ export function getPreloadedHtmlForRoute(webRoot: string, pathname: string): str
   }
 
   const route = matchRouteName(pathname)
-  if (!route) return html
+  if (route) {
+    const tags = templateCache?.routePreloadTags[route] || findRouteModulePreloadTags(webRoot, route)
+    if (tags) {
+      html = html.replace(/<\/head>/i, `${tags}\n  </head>`)
+    }
+  }
 
-  const tags = templateCache?.routePreloadTags[route] || findRouteModulePreloadTags(webRoot, route)
-  if (!tags) return html
-
-  return html.replace(/<\/head>/i, `${tags}\n  </head>`)
+  return applySiteBrandingToHtml(html)
 }
 
 export type SubjectSeoResult =
@@ -319,7 +375,9 @@ export function renderSuccessPage(
   const name = item.nameCn || item.name || `番剧 ${subjectId}`
   const altName =
     item.nameCn && item.name && item.nameCn !== item.name ? item.name : undefined
-  const pageTitle = formatSubjectTitle(name, altName, 'Animaku')
+  const cfg = getSiteConfig()
+  const siteName = cfg.siteName || 'Animaku'
+  const pageTitle = formatSubjectTitle(name, altName, siteName)
   const rawSummary = (item.summary || '').trim()
   const metaDesc = formatSubjectDescription(name, rawSummary, 160)
   const canonicalUrl = origin ? `${origin}/subject/${subjectId}` : `/subject/${subjectId}`
@@ -438,7 +496,7 @@ export function renderSuccessPage(
     `<div id="root">\n${skeleton}\n    </div>`,
   )
 
-  return html
+  return applySiteBrandingToHtml(html, { replaceTitle: false })
 }
 
 /**
@@ -447,7 +505,9 @@ export function renderSuccessPage(
 export function render404Page(templateHtml: string, subjectId: number): string {
   let html = templateHtml
 
-  const title404 = '番剧不存在 (404) · Animaku'
+  const cfg = getSiteConfig()
+  const siteName = cfg.siteName || 'Animaku'
+  const title404 = `番剧不存在 (404) · ${siteName}`
   const desc404 = `未找到条目 ID 为 ${subjectId} 的番剧信息。该番剧可能已下架或不存在。`
 
   html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title404)}</title>`)
@@ -491,7 +551,7 @@ export function render404Page(templateHtml: string, subjectId: number): string {
     `<div id="root">\n${skeleton404}\n    </div>`,
   )
 
-  return html
+  return applySiteBrandingToHtml(html, { replaceTitle: false })
 }
 
 /**
@@ -560,6 +620,7 @@ export async function handleSubjectPrerender(
   if (preloadTags) {
     fallbackHtml = fallbackHtml.replace(/<\/head>/i, `${preloadTags}\n  </head>`)
   }
+  fallbackHtml = applySiteBrandingToHtml(fallbackHtml, { replaceTitle: false })
   return new Response(fallbackHtml, {
     status: 200,
     headers: {

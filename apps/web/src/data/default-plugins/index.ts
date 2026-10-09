@@ -6,7 +6,6 @@ import moonci from './moonci.json'
 import mifun from './mifun.json'
 import girigiri from './girigiri.json'
 import lzizy from './lzizy.json'
-import xifan from './xifan.json'
 import xifanNext from './xifan-next.json'
 import mxdm from './mxdm.json'
 import omofun from './omofun.json'
@@ -24,8 +23,7 @@ import omofun from './omofun.json'
  * - mxdm: MacCMS-style third party (weight: 55)
  * - tvtfun: TvTFun tvtfun.net — Next.js RESTful API + 线路D优先 + 1080P BytePlus/Akamai MP4 (weight: 51, titlePreference: chinese)
  * - omofun: 211dm/omofuns — server search adapter (verify gate) + XPath chapters + player_aaaa (weight: 50, titlePreference: original)
- * - xifan: 稀饭 anime.xifanacg.com — suggest API search + HTML chapters + player_aaaa (weight: 50)
- * Note: anime1 & libvio retired from default built-ins to eliminate full media proxy egress risks.
+ * Note: legacy xifan retired (superseded by xifan-next); anime1 & libvio retired from default built-ins to eliminate full media proxy egress risks.
  */
 export const DEFAULT_PLUGIN_RULES: PluginRule[] = [
   xifanNext as PluginRule,
@@ -38,5 +36,4 @@ export const DEFAULT_PLUGIN_RULES: PluginRule[] = [
   mxdm as PluginRule,
   tvtfun as PluginRule,
   omofun as PluginRule,
-  xifan as PluginRule,
 ]

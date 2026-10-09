@@ -67,6 +67,9 @@
 - 视频源历史绑定 Store：`apps/web/src/stores/source-bindings.ts`
 - 内置默认视频源 JSON 规则：`apps/web/src/data/default-plugins/index.ts`
 - 视频源契约、标题偏好 (titlePreference) 与打分安全锁 (Season Guard)：`packages/shared/src/plugin.ts`
+- 视频源、弹幕与 Bangumi 全链路健康度与分片连通性测试工具：`scripts/test-sources.ts`（`pnpm test:sources`，支持全量探活、单源排查、64KB视频分片探测、GeoIP地域自适应与大模型排障诊断）
+- 视频源全链路性能与老番资源覆盖度横评工具：`scripts/benchmark-sources.mjs`
+- 视频源自动化探查与指纹识别工具：`scripts/probe-source.mjs`
 
 ## 6. 播放会话与页面布局 (Watch Page & Session)
 - 播放页主控制器：`apps/web/src/pages/WatchPage.tsx`
@@ -176,4 +179,7 @@
 - 单容器全栈多阶段构建：`Dockerfile`
 - 一键编排与构建参数透传：`docker-compose.yml`, `.dockerignore`
 - 环境变量配置范本与说明：`.env.example`
+- 视频源与元数据自动化巡检工作流 (GitHub Actions)：`.github/workflows/source-health-check.yml`（定时探活、手工单源排查、Step Summary 可视化看板与 Artifacts 归档）
+- Docker 镜像跨架构构建与发布工作流 (GitHub Actions)：`.github/workflows/docker-publish.yml`
+
 

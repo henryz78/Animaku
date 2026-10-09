@@ -6,6 +6,8 @@
  * Absolute OG / canonical URLs need VITE_SITE_URL (or runtime origin fallback).
  */
 
+import { useSiteConfigStore } from '../stores/site-config'
+
 export const SITE_NAME = 'Animaku 动漫'
 
 export const DEFAULT_DESCRIPTION =
@@ -85,11 +87,27 @@ export function truncateDescription(text: string, max = DESC_MAX): string {
   return `${(sp > 40 ? cut.slice(0, sp) : cut).trim()}…`
 }
 
-export function formatDocumentTitle(pageTitle: string, siteName = SITE_NAME): string {
+export function formatDocumentTitle(pageTitle: string, siteName?: string): string {
+  const dynamicName = useSiteConfigStore.getState().siteName?.trim()
+  const effectiveSiteName = siteName || dynamicName || SITE_NAME
   const t = pageTitle.trim()
-  if (!t || t === siteName) return siteName
-  if (t.includes(siteName) || t.includes('Animaku')) return t
-  return `${t} · ${siteName}`
+  if (!t || t === effectiveSiteName) return effectiveSiteName
+
+  // 若标题已经包含当前生效的站名，避免重复拼接
+  if (t.includes(effectiveSiteName)) return t
+
+  // 若标题以默认的 " · Animaku" 或 " · Animaku 动漫" 结尾，替换为自定义站名
+  if (t.endsWith(' · Animaku') || t.endsWith(' · Animaku 动漫')) {
+    const cleanPrefix = t.replace(/ · (Animaku 动漫|Animaku)$/, '')
+    return `${cleanPrefix} · ${effectiveSiteName}`
+  }
+
+  // 针对默认首页标题 'Animaku 动漫'，若已设置了自定义站名，则直接返回自定义站名
+  if (t === SITE_NAME || t === 'Animaku') {
+    return effectiveSiteName
+  }
+
+  return `${t} · ${effectiveSiteName}`
 }
 
 /** Prefer build-time public site URL; fall back to browser origin. */
@@ -174,7 +192,10 @@ function applyJsonLd(data: PageSeo['jsonLd']) {
 export function applyPageSeo(seo: PageSeo): void {
   if (typeof document === 'undefined') return
 
-  const title = formatDocumentTitle(seo.title)
+  const dynamicName = useSiteConfigStore.getState().siteName?.trim()
+  const effectiveSiteName = dynamicName || SITE_NAME
+
+  const title = formatDocumentTitle(seo.title, effectiveSiteName)
   const description = truncateDescription(
     seo.description?.trim() || DEFAULT_DESCRIPTION,
   )
@@ -198,13 +219,13 @@ export function applyPageSeo(seo: PageSeo): void {
   }
   ensureMetaByName('robots', fullRobots)
   ensureMetaByName('googlebot', fullRobots)
-  ensureMetaByName('application-name', SITE_NAME)
+  ensureMetaByName('application-name', effectiveSiteName)
 
   // Open Graph — TVSeries pages use video.tv_show; everything else website
   const isSubjectPath =
     path.startsWith('/subject/') || path.startsWith('/play/')
   ensureMetaByProperty('og:type', isSubjectPath ? 'video.tv_show' : 'website')
-  ensureMetaByProperty('og:site_name', SITE_NAME)
+  ensureMetaByProperty('og:site_name', effectiveSiteName)
   ensureMetaByProperty('og:title', title)
   ensureMetaByProperty('og:description', description)
   if (pageUrl) ensureMetaByProperty('og:url', pageUrl)
@@ -255,10 +276,13 @@ export function buildWebsiteJsonLd(siteUrl = resolveSiteUrl()): Record<string, u
     alternateName.push(hostnameBackup)
   }
 
+  const dynamicName = useSiteConfigStore.getState().siteName?.trim()
+  const effectiveSiteName = dynamicName || SITE_NAME
+
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: SITE_NAME,
+    name: effectiveSiteName,
     alternateName,
     description: DEFAULT_DESCRIPTION,
     ...(url ? { url } : {}),

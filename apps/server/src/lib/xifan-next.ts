@@ -241,6 +241,7 @@ interface EpisodeItem {
   episode_number?: number
   title?: string
   kind?: string
+  available_at?: string | null
 }
 
 interface SourceLineItem {
@@ -257,6 +258,29 @@ interface PlaybackResponse {
   anime_id?: number
   url?: string
   error?: string
+  candidates?: Array<{
+    source_id?: number
+    source_code?: string
+    source_name?: string
+    url?: string
+    quality?: string
+  }>
+}
+
+function selectUrlFromPlaybackResponse(
+  res: PlaybackResponse,
+  sourceCode?: string,
+): string {
+  if (sourceCode && Array.isArray(res.candidates) && res.candidates.length > 0) {
+    const target = sourceCode.toLowerCase().trim()
+    const matched = res.candidates.find(
+      (c) => c.source_code && c.source_code.toLowerCase().trim() === target,
+    )
+    if (matched && matched.url) {
+      return matched.url
+    }
+  }
+  return res.url || ''
 }
 
 export async function searchXifanNext(
@@ -502,16 +526,25 @@ export async function chaptersXifanNext(
             diagnostics,
           }
         }
+
+        // 页面成功抓取，且明确无任何有效分集（如未开播或暂无可用播放线路）
+        diagnostics.push('页面解析成功: 该番剧当前暂未更新任何可用线路剧集')
+        return {
+          pluginName: rule.name,
+          roads: [],
+          diagnostics,
+        }
       }
     }
   } catch (e) {
     diagnostics.push(`SSR 页面线路解析异常: ${(e as Error).message}`)
   }
 
-  // 2. Fallback: query Supabase REST episodes table
+  // 2. Fallback: query Supabase REST episodes table (仅在 SSR 页面抓取彻底失败时兜底)
   try {
+    // 关键：必须过滤 available_at 不为空，严格排除未来 Bangumi 同步的未开播占位日程
     const rawEpisodes = await fetchSupabaseJson<EpisodeItem[]>(
-      `/rest/v1/episodes?anime_id=eq.${animeId}&select=id,title,episode_number,kind&order=episode_number.asc`,
+      `/rest/v1/episodes?anime_id=eq.${animeId}&available_at=not.is.null&select=id,title,episode_number,kind&order=episode_number.asc`,
     )
     if (Array.isArray(rawEpisodes) && rawEpisodes.length > 0) {
       const mainEps = rawEpisodes.filter((e) => !e.kind || e.kind === 'main')
@@ -696,10 +729,15 @@ export async function resolveXifanNext(
     new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_500)),
   ])
 
-  if (fbEarlyResult && 'ok' in fbEarlyResult && fbEarlyResult.ok && fbEarlyResult.url) {
-    playUrl = fbEarlyResult.url
-    playbackAction = fbEarlyResult.action || 'fallback'
-  } else {
+  if (fbEarlyResult && 'ok' in fbEarlyResult && fbEarlyResult.ok) {
+    const candidateUrl = selectUrlFromPlaybackResponse(fbEarlyResult, sourceCode)
+    if (candidateUrl) {
+      playUrl = candidateUrl
+      playbackAction = fbEarlyResult.action || 'fallback'
+    }
+  }
+
+  if (!playUrl) {
     // 2. If fallback timed out or failed, check HLS immediately without blocking
     const hlsResult = await hlsPromise
     if (hlsResult && 'ok' in hlsResult && hlsResult.ok && hlsResult.url) {
@@ -710,10 +748,15 @@ export async function resolveXifanNext(
     } else {
       // 3. HLS not available or failed; await remaining fallback as last resort
       const fbLateResult = await fbPromise
-      if (fbLateResult && 'ok' in fbLateResult && fbLateResult.ok && fbLateResult.url) {
-        playUrl = fbLateResult.url
-        playbackAction = fbLateResult.action || 'fallback'
-      } else {
+      if (fbLateResult && 'ok' in fbLateResult && fbLateResult.ok) {
+        const candidateUrl = selectUrlFromPlaybackResponse(fbLateResult, sourceCode)
+        if (candidateUrl) {
+          playUrl = candidateUrl
+          playbackAction = fbLateResult.action || 'fallback'
+        }
+      }
+
+      if (!playUrl) {
         const errorMsg =
           ('error' in fbLateResult && fbLateResult.error ? fbLateResult.error : null) ||
           ('error' in hlsResult && hlsResult.error ? hlsResult.error : null) ||

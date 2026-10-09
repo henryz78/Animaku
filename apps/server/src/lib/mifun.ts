@@ -99,24 +99,22 @@ export async function searchMifun(
   const seenUrls = new Set<string>()
 
   // MiFun database 100% names multi-season anime without spaces before season numbers.
-  // Build self-healing query fallback list:
+  // 1. 优先尝试去空格紧凑版 (如 "进击的巨人第二季" / "鬼灭之刃柱训练篇")
   const queriesToTry: string[] = []
   const compact = trimmed.replace(/\s+(第\s*[一二三四五六七八九十\d]+\s*[季期部])/g, '$1')
-  if (compact !== trimmed) {
-    queriesToTry.push(compact) // Try compact first for 0ms direct hit on MiFun
-  }
-  queriesToTry.push(trimmed)
+  queriesToTry.push(compact)
 
+  // 2. 仅当未命中时，备选回退纯主标题 (如 "进击的巨人")，坚决不进行无意义的多重排队请求
   const stripped = extractBaseTitle(trimmed)
-  if (stripped && stripped !== trimmed && !queriesToTry.includes(stripped)) {
+  if (stripped) {
     const compactStripped = stripped.replace(/\s+(第\s*[一二三四五六七八九十\d]+\s*[季期部])/g, '$1')
-    if (compactStripped !== stripped && !queriesToTry.includes(compactStripped)) {
+    if (!queriesToTry.includes(compactStripped)) {
       queriesToTry.push(compactStripped)
     }
-    queriesToTry.push(stripped)
   }
 
-  for (const q of queriesToTry) {
+  // 严格限制最多只尝试前 2 个最高概率词，并将单次超时收紧为 3s，遇到慢响应果断止损
+  for (const q of queriesToTry.slice(0, 2)) {
     try {
       const suggestUrl = `${baseUrl}/index.php/ajax/suggest?mid=1&wd=${encodeURIComponent(q)}`
       assertPublicHttpUrl(suggestUrl)
@@ -124,7 +122,7 @@ export async function searchMifun(
       const res = await fetchPublic(
         suggestUrl,
         { headers: getJsonHeaders(`${baseUrl}/`) },
-        { timeoutMs: 8_000 },
+        { timeoutMs: 3_000 },
       )
 
       if (res.ok) {
@@ -151,6 +149,48 @@ export async function searchMifun(
     } catch (err) {
       diagnostics.push(
         `Suggest API 搜索异常: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  // 3. Fallback: 若 Suggest API 超时或未返回结果，回退至经过索引优化的 HTML 网页搜索 (vodsearch)
+  if (items.length === 0) {
+    try {
+      const searchPageUrl = `${baseUrl}/vodsearch/-------------/?wd=${encodeURIComponent(compact)}`
+      assertPublicHttpUrl(searchPageUrl)
+
+      const res = await fetchPublic(
+        searchPageUrl,
+        { headers: getHtmlHeaders(`${baseUrl}/`) },
+        { timeoutMs: 4_500 },
+      )
+
+      if (res.ok) {
+        const html = await res.text()
+        const $ = cheerio.load(html)
+        $('.hl-list-item').each((_, el) => {
+          const $a = $(el).find('.hl-item-title a')
+          if ($a.length > 0) {
+            const name = $a.text().trim()
+            const href = $a.attr('href') || ''
+            if (name && href && !href.startsWith('javascript:')) {
+              const absDetailUrl = href.startsWith('http')
+                ? href
+                : `${baseUrl}${href.startsWith('/') ? '' : '/'}${href}`
+              if (!seenUrls.has(absDetailUrl)) {
+                seenUrls.add(absDetailUrl)
+                items.push({
+                  name,
+                  src: absDetailUrl,
+                })
+              }
+            }
+          }
+        })
+      }
+    } catch (err) {
+      diagnostics.push(
+        `HTML 网页搜索回退异常: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }

@@ -1,7 +1,7 @@
 {
   "name": "animaku",
   "private": true,
-  "version": "1.17.0",
+  "version": "1.18.7",
   "description": "Animaku — browser anime client: Bangumi metadata, plugin sources, danmaku, collections",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -15,13 +15,14 @@
     "start:prod": "pnpm build && pnpm start",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
+    "test:sources": "pnpm --filter @animaku/server exec tsx ../../scripts/test-sources.ts",
     "benchmark:sources": "pnpm --filter @animaku/server exec tsx ../../scripts/benchmark-sources.mjs",
     "db": "node scripts/db-query.mjs",
     "db:migrate": "node scripts/migrate-play-stats.mjs",
     "bump": "node scripts/bump-version.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "pnpm@9.15.0"
 }

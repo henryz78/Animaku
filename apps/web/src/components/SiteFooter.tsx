@@ -1,4 +1,4 @@
-import { getSiteBranding } from '../lib/site-branding'
+import { useSiteBranding } from '../lib/site-branding'
 
 const START_YEAR = 2026
 
@@ -7,7 +7,7 @@ const START_YEAR = 2026
  * Single row centered flow: Brand · Version · Copyright · Source · Feedback · Disclaimer
  */
 export function SiteFooter() {
-  const b = getSiteBranding()
+  const b = useSiteBranding()
   const currentYear = new Date().getFullYear()
   const yearDisplay =
     currentYear > START_YEAR ? `${START_YEAR}–${currentYear}` : `${START_YEAR}`
