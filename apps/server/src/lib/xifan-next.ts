@@ -270,17 +270,39 @@ interface PlaybackResponse {
 function selectUrlFromPlaybackResponse(
   res: PlaybackResponse,
   sourceCode?: string,
-): string {
-  if (sourceCode && Array.isArray(res.candidates) && res.candidates.length > 0) {
-    const target = sourceCode.toLowerCase().trim()
-    const matched = res.candidates.find(
-      (c) => c.source_code && c.source_code.toLowerCase().trim() === target,
-    )
-    if (matched && matched.url) {
-      return matched.url
+): { url: string; sourceCode?: string; sourceName?: string } {
+  if (Array.isArray(res.candidates) && res.candidates.length > 0) {
+    if (sourceCode) {
+      const target = sourceCode.toLowerCase().trim()
+      const matched = res.candidates.find(
+        (c) => c.source_code && c.source_code.toLowerCase().trim() === target,
+      )
+      if (matched && matched.url) {
+        return {
+          url: matched.url,
+          sourceCode: matched.source_code,
+          sourceName: matched.source_name,
+        }
+      }
+    }
+    if (res.url) {
+      const matchUrl = res.candidates.find((c) => c.url === res.url)
+      return {
+        url: res.url,
+        sourceCode: matchUrl?.source_code,
+        sourceName: matchUrl?.source_name,
+      }
+    }
+    const firstValid = res.candidates.find((c) => Boolean(c.url))
+    if (firstValid?.url) {
+      return {
+        url: firstValid.url,
+        sourceCode: firstValid.source_code,
+        sourceName: firstValid.source_name,
+      }
     }
   }
-  return res.url || ''
+  return { url: res.url || '' }
 }
 
 export async function searchXifanNext(
@@ -689,9 +711,6 @@ export async function resolveXifanNext(
     throw new Error(`无法从播放链接提取分集 ID: ${pageUrl}`)
   }
 
-  let playUrl = ''
-  let playbackAction = ''
-
   const fbBody: Record<string, unknown> = {
     action: 'fallback',
     episode_id: episodeId,
@@ -700,70 +719,31 @@ export async function resolveXifanNext(
     fbBody.source = sourceCode
   }
 
-  // Concurrently dispatch requests to Supabase (ap-southeast-1 region)
-  const hlsPromise = fetchSupabaseJson<PlaybackResponse>(
-    '/functions/v1/issue-web-playback',
-    {
-      method: 'POST',
-      body: {
-        action: 'hls',
-        episode_id: episodeId,
-      },
-      timeoutMs: 6_000,
-    },
-  ).catch((e) => ({ ok: false as const, error: (e as Error).message }))
-
-  const fbPromise = fetchSupabaseJson<PlaybackResponse>(
+  // 对齐源站官方前端策略：统一调用 action: "fallback" 获取直链与全部候选线路 (candidates)
+  const playbackRes = await fetchSupabaseJson<PlaybackResponse>(
     '/functions/v1/issue-web-playback',
     {
       method: 'POST',
       body: fbBody,
-      timeoutMs: 6_000,
+      timeoutMs: 8_000,
     },
-  ).catch((e) => ({ ok: false as const, error: (e as Error).message }))
+  )
 
-  // Priority-aware race with 2.5s grace window:
-  // 1. If domestic 1080P MP4 (fallback) succeeds within 2500ms, immediately pick it
-  const fbEarlyResult = await Promise.race([
-    fbPromise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_500)),
-  ])
-
-  if (fbEarlyResult && 'ok' in fbEarlyResult && fbEarlyResult.ok) {
-    const candidateUrl = selectUrlFromPlaybackResponse(fbEarlyResult, sourceCode)
-    if (candidateUrl) {
-      playUrl = candidateUrl
-      playbackAction = fbEarlyResult.action || 'fallback'
-    }
+  if (!playbackRes.ok) {
+    throw new Error(
+      `稀饭Next解析失败: ${playbackRes.error || '源站下发异常'}`,
+    )
   }
 
+  const selected = selectUrlFromPlaybackResponse(playbackRes, sourceCode)
+  let playUrl = selected.url
   if (!playUrl) {
-    // 2. If fallback timed out or failed, check HLS immediately without blocking
-    const hlsResult = await hlsPromise
-    if (hlsResult && 'ok' in hlsResult && hlsResult.ok && hlsResult.url) {
-      const masterHlsUrl = hlsResult.url
-      const highResHlsUrl = await extractHighestResolutionHls(masterHlsUrl)
-      playUrl = highResHlsUrl
-      playbackAction = 'hls-1080p'
-    } else {
-      // 3. HLS not available or failed; await remaining fallback as last resort
-      const fbLateResult = await fbPromise
-      if (fbLateResult && 'ok' in fbLateResult && fbLateResult.ok) {
-        const candidateUrl = selectUrlFromPlaybackResponse(fbLateResult, sourceCode)
-        if (candidateUrl) {
-          playUrl = candidateUrl
-          playbackAction = fbLateResult.action || 'fallback'
-        }
-      }
+    throw new Error('稀饭Next未能生成有效播放直链')
+  }
 
-      if (!playUrl) {
-        const errorMsg =
-          ('error' in fbLateResult && fbLateResult.error ? fbLateResult.error : null) ||
-          ('error' in hlsResult && hlsResult.error ? hlsResult.error : null) ||
-          '未能生成有效播放直链'
-        throw new Error(`稀饭Next解析失败: ${errorMsg}`)
-      }
-    }
+  const isHls = playUrl.includes('.m3u8')
+  if (isHls) {
+    playUrl = await extractHighestResolutionHls(playUrl)
   }
 
   // pan.wo.cn rejects cross-origin referers with 400 Bad Request; use pan.wo.cn or empty
@@ -773,19 +753,21 @@ export async function resolveXifanNext(
     playUrl.includes('apn.moedot.net')
   const referer = isWoPan ? 'https://pan.wo.cn/' : 'https://next.xifanacg.com/'
   const proxyUrl = `/api/media/proxy?url=${encodeURIComponent(playUrl)}&referer=${encodeURIComponent(referer)}`
+  const format: 'hls' | 'mp4' = isHls ? 'hls' : 'mp4'
 
   return {
     playUrl,
     proxyUrl,
     referer,
+    format,
     headers: {
       'User-Agent': rule.userAgent || config.defaultUserAgent,
       Referer: referer,
     },
     diagnostics: [
-      playbackAction.startsWith('hls')
-        ? `成功解析 HLS 1080P 专线切片流: ${playUrl}`
-        : `成功解析 1080P 国内原画直链 (${playbackAction}): ${playUrl}`,
+      isHls
+        ? `成功解析 HLS 专线切片流 (${selected.sourceName || sourceCode || 'HLS'}): ${playUrl}`
+        : `成功解析 1080P MP4 原画直链 (${selected.sourceName || sourceCode || 'MP4'}): ${playUrl}`,
     ],
   }
 }

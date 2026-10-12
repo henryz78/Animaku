@@ -292,9 +292,24 @@ export async function searchOmofun(
 
     const items = parseOmofunSearchHtml(text, origin)
     diagnostics.push(`解析到 ${items.length} 条结果`)
+
+    // 按与关键词的相关度（完全匹配 > 前缀匹配 > 包含匹配）排序，避免单集衍生篇/OAD抢占主番剧
+    const cleanKw = kw.toLowerCase().replace(/\s+/g, '')
+    const sortedItems = [...items].sort((a, b) => {
+      const na = a.name.toLowerCase().replace(/\s+/g, '')
+      const nb = b.name.toLowerCase().replace(/\s+/g, '')
+      const score = (n: string) => {
+        if (n === cleanKw) return 3
+        if (n.startsWith(cleanKw)) return 2
+        if (n.includes(cleanKw)) return 1
+        return 0
+      }
+      return score(nb) - score(na) || na.length - nb.length
+    })
+
     return {
       pluginName: rule.name,
-      items,
+      items: sortedItems,
       diagnostics: diagnostics.slice(0, 12),
     }
   } catch (e) {
