@@ -77,7 +77,7 @@ RUN pnpm --filter @animaku/web build \
 # ---- runtime native deps (sharp prebuilts for target platform) ----
 FROM node:22-bookworm-slim AS prod-deps
 WORKDIR /app
-RUN npm install --omit=dev sharp@0.35.5 && npm cache clean --force
+RUN npm install --omit=dev sharp@0.35.5 7zip-min@3.0.1 && npm cache clean --force
 
 # ---- runtime (node dist only; no tsx / no full monorepo src) ----
 FROM node:22-bookworm-slim AS runner
