@@ -198,7 +198,11 @@ export async function chaptersGirigiri(
 
   // 2. Extract Playlists
   const roads: Road[] = []
-  const playBoxes = $('.anthology-list-play, .anthology-list-box')
+  // dsn2 模板同时包含移动端与桌面端同内容容器，优先取主容器并互斥回退，防止逗号选择器导致同组线路重复翻倍
+  let playBoxes = $('.anthology-list-play')
+  if (playBoxes.length === 0) {
+    playBoxes = $('.anthology-list-box')
+  }
 
   if (playBoxes.length > 0) {
     playBoxes.each((boxIndex, box) => {
@@ -213,6 +217,10 @@ export async function chaptersGirigiri(
           const absEpUrl = href.startsWith('http') ? href : `${baseUrl}${href.startsWith('/') ? '' : '/'}${href}`
           if (/^\d+$/.test(name)) {
             name = `第${name.padStart(2, '0')}集`
+          } else if (!name || /^\d+p$/i.test(name)) {
+            const nidMatch = href.match(/playGV\d+-\d+-(\d+)/)
+            const nid = nidMatch ? nidMatch[1] : '1'
+            name = `第${nid.padStart(2, '0')}集${name ? ` (${name})` : ''}`
           }
           urls.push(absEpUrl)
           identifiers.push(name)
@@ -242,6 +250,10 @@ export async function chaptersGirigiri(
         if (!urls.includes(absEpUrl)) {
           if (/^\d+$/.test(name)) {
             name = `第${name.padStart(2, '0')}集`
+          } else if (!name || /^\d+p$/i.test(name)) {
+            const nidMatch = href.match(/playGV\d+-\d+-(\d+)/)
+            const nid = nidMatch ? nidMatch[1] : '1'
+            name = `第${nid.padStart(2, '0')}集${name ? ` (${name})` : ''}`
           }
           urls.push(absEpUrl)
           identifiers.push(name)
