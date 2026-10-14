@@ -939,6 +939,10 @@ export function VideoPlayer({
         onClearEpisodeTimeOffsets={danmakuPanel.onClearEpisodeTimeOffsets}
         danmakuOffset={danmakuPanel.danmakuOffset}
         onResetOffset={danmakuPanel.onResetOffset}
+        activeDanmuBox={danmakuPanel.activeDanmuBox}
+        onLoadDanmuBox={danmakuPanel.onLoadDanmuBox}
+        onUnloadDanmuBox={danmakuPanel.onUnloadDanmuBox}
+        targetEpisode={danmakuPanel.targetEpisode}
         bottomOffset={56}
         layout={pointerMode}
       />

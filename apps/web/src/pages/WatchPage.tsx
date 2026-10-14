@@ -18,6 +18,7 @@ import { MobileWatchLayout } from './watch/MobileWatchLayout'
 import { WatchMeta } from './watch/WatchMeta'
 import { MobileEpsSection } from './watch/MobileEpsSection'
 import { SourceBoard } from './watch/SourceBoard'
+import { WatchEpisodeSourcePod, type WatchPodTab } from './watch/WatchEpisodeSourcePod'
 import { WatchHudToast } from './watch/WatchHudToast'
 import { WatchRecommendations } from './watch/WatchRecommendations'
 import { WatchComments } from './watch/comments'
@@ -43,8 +44,8 @@ export function WatchPage() {
   const [summaryOpen, setSummaryOpen] = useState(false)
   /** Mobile: whole meta card collapsed to 2 lines until expanded */
   const [metaOpen, setMetaOpen] = useState(false)
-  /** Sources collapsed by default; on-demand stream probe when expanded by user */
-  const [sourcesOpen, setSourcesOpen] = useState(false)
+  /** Active media pod tab: 'episodes' (default) vs 'sources' */
+  const [activeNavTab, setActiveNavTab] = useState<WatchPodTab>('episodes')
   /** Bilibili strip: false = horizontal cards, true = full grid (desktop + mobile) */
   const [epsListExpanded, setEpsListExpanded] = useState(false)
   /** Wide-screen theater mode — active only for current watch session (not persisted). */
@@ -52,10 +53,11 @@ export function WatchPage() {
   /** 是否正在后台并发检索备用视频源（保持视频源面板折叠，避免闪烁展开） */
   const [isAutoProbingSources, setIsAutoProbingSources] = useState(false)
 
-  // Reset widescreen mode to standard when navigating to a different subject
+  // Reset widescreen mode and media tab to standard when navigating to a different subject
   useEffect(() => {
     setWidescreen(false)
     setIsAutoProbingSources(false)
+    setActiveNavTab('episodes')
     if (Number.isFinite(bangumiId) && bangumiId > 0) {
       perfMetrics.markWatchMounted(bangumiId)
     }
@@ -69,13 +71,13 @@ export function WatchPage() {
    */
   const autoExpandedEpsKey = useRef<string | null>(null)
 
-  /** Collapse 视频源; default 选集 to full grid; on mobile scroll cinema into view. */
+  /** Focus 选集 Tab after selection; default 选集 to full grid; on mobile scroll cinema into view. */
   const focusAfterSelection = useCallback(
     (key: string, opts?: { forceScroll?: boolean }) => {
       if (!key) return
       const already = focusedSelectionKey.current === key
       focusedSelectionKey.current = key
-      setSourcesOpen(false)
+      setActiveNavTab('episodes')
       // 选源后默认「全 N 话」网格（每源只自动展开一次，用户可再收起）
       if (autoExpandedEpsKey.current !== key) {
         autoExpandedEpsKey.current = key
@@ -424,8 +426,8 @@ export function WatchPage() {
             <button
               type="button"
               onClick={() => {
-                setSourcesOpen(true)
-                const el = document.getElementById('kz-watch-sources')
+                startTransition(() => setActiveNavTab('sources'))
+                const el = document.getElementById('kz-watch-media-pod') || document.getElementById('kz-watch-sources')
                 if (el) {
                   el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
                 }
@@ -524,8 +526,12 @@ export function WatchPage() {
   const sourcesPanel = (
     <SourceBoard
       bangumiId={bangumiId}
-      sourcesOpen={sourcesOpen}
-      onToggleSourcesOpen={() => setSourcesOpen((v) => !v)}
+      sourcesOpen={activeNavTab === 'sources'}
+      onToggleSourcesOpen={() =>
+        startTransition(() =>
+          setActiveNavTab((v) => (v === 'sources' ? 'episodes' : 'sources')),
+        )
+      }
       activePluginName={w.pluginName}
       activeEpisodeNumber={w.episode?.episode}
       plugins={w.enabledPlugins}
@@ -537,6 +543,7 @@ export function WatchPage() {
       onSwitchSource={(plugin, targetItem, opts) => {
         startTransition(() => {
           void w.switchToPlugin(plugin, targetItem, opts)
+          setActiveNavTab('episodes')
         })
       }}
       selection={w.selection}
@@ -546,9 +553,10 @@ export function WatchPage() {
       searchResults={w.searchResults}
       defaultSearchEmpty={w.defaultSearchEmpty}
       onAllFallbacksFailed={() => {
-        setSourcesOpen(true)
+        startTransition(() => setActiveNavTab('sources'))
       }}
       onAutoProbingChange={setIsAutoProbingSources}
+      embedded
     />
   )
 
@@ -587,6 +595,68 @@ export function WatchPage() {
       onPickSlot={(slot, rd) => startTransition(() => w.pickSlot(slot, rd))}
       onPickEpisode={(ep, rd) => startTransition(() => w.pickEpisode(ep, rd))}
       onRefreshChapters={() => startTransition(() => void w.refreshChapters())}
+      embedded
+      isActive={activeNavTab === 'episodes'}
+    />
+  )
+
+  /* 选集与视频源一体化融合舱（桌面端：选集 | 视频源） */
+  const desktopEpisodeSourcePod = (
+    <WatchEpisodeSourcePod
+      activeTab={activeNavTab}
+      onTabChange={(tab) => startTransition(() => setActiveNavTab(tab))}
+      episodesNode={epsPanel}
+      sourcesNode={sourcesPanel}
+      totalEpisodes={epCount}
+      playingEpisode={w.episode?.episode}
+      activePluginName={w.pluginName}
+      sourcesTotalCount={w.enabledPlugins.length}
+      isAutoProbing={isAutoProbingSources}
+    />
+  )
+
+  /* 移动端嵌入式番剧详情 (作为移动端融合舱中的 Tab) */
+  const mobileDetailBlock = (
+    <WatchMeta
+      item={item}
+      title={w.title}
+      pluginName={w.pluginName}
+      episodeLabel={w.episode ? `第 ${w.episode.episode} 集` : null}
+      mediaHint={
+        w.mediaSrc
+          ? w.playbackTransit === 'playlist-proxy'
+            ? '列表代理·分片直连'
+            : w.playbackTransit === 'direct' || w.playbackMode === 'direct'
+              ? '直连源站'
+              : '经服务器代理'
+          : null
+      }
+      summaryOpen={summaryOpen}
+      onToggleSummary={() => startTransition(() => setSummaryOpen((v) => !v))}
+      token={token}
+      collectType={collectType}
+      collectOptions={collectOptions}
+      onCollectChange={(t) => setCollect.mutate(t)}
+      collectPending={setCollect.isPending}
+      compact={true}
+      metaOpen={true}
+      embedded={true}
+    />
+  )
+
+  /* 移动端三合一融合舱（移动端：详情 | 视频源 | 选集） */
+  const mobileEpisodeSourcePod = (
+    <WatchEpisodeSourcePod
+      activeTab={activeNavTab}
+      onTabChange={(tab) => startTransition(() => setActiveNavTab(tab))}
+      episodesNode={epsPanel}
+      sourcesNode={sourcesPanel}
+      detailNode={mobileDetailBlock}
+      totalEpisodes={epCount}
+      playingEpisode={w.episode?.episode}
+      activePluginName={w.pluginName}
+      sourcesTotalCount={w.enabledPlugins.length}
+      isAutoProbing={isAutoProbingSources}
     />
   )
 
@@ -611,11 +681,10 @@ export function WatchPage() {
     </ErrorBoundary>
   ) : null
 
-  /* Desktop rail: sources, episodes, then recommendations (right column). */
+  /* Desktop rail: episode-source pod, then recommendations (right column). */
   const rail = (
     <>
-      {sourcesPanel}
-      {epsPanel}
+      {desktopEpisodeSourcePod}
       {recommendationsPanel}
     </>
   )
@@ -631,12 +700,10 @@ export function WatchPage() {
           widescreen={widescreen}
         />
       ) : (
-        // Mobile: player → meta → 视频源 → 选集 → 推荐 → 吐槽评论 (Bilibili-style)
+        // Mobile: player → 融合舱 (详情 | 视频源 | 选集) → 推荐 → 吐槽评论
         <MobileWatchLayout
           player={playerBlock}
-          meta={metaBlock}
-          sources={sourcesPanel}
-          episodes={epsPanel}
+          episodes={mobileEpisodeSourcePod}
           recommendations={recommendationsPanel}
           comments={commentsPanel}
         />

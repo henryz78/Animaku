@@ -1563,7 +1563,12 @@ function decodeMaccmsUrl(raw: string, encrypt?: number | string): string {
     try {
       url = decodeURIComponent(url)
     } catch {
-      /* ignore */
+      // 兼容老式 MacCMS escape() 生成的 %uXXXX 编码（如 %u7B2C%30%31%u96C6），decodeURIComponent 会抛出 URI malformed
+      try {
+        url = unescape(url)
+      } catch {
+        /* ignore */
+      }
     }
   } else if (mode === '2') {
     try {
@@ -1571,8 +1576,19 @@ function decodeMaccmsUrl(raw: string, encrypt?: number | string): string {
       try {
         url = decodeURIComponent(url)
       } catch {
-        /* ignore */
+        try {
+          url = unescape(url)
+        } catch {
+          /* ignore */
+        }
       }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (/%u[0-9a-fA-F]{4}/i.test(url)) {
+    try {
+      url = unescape(url)
     } catch {
       /* ignore */
     }

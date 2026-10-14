@@ -12,6 +12,7 @@ import {
   extractBvid,
   parseBilibiliInput,
   matchDanmakuEpisode,
+  matchBestEpisodeXml,
   parseEpisodeNumber,
   parseDanmakuXml,
   deduplicateDanmakuIncremental,
@@ -94,6 +95,17 @@ type CachedCommentsPayload = {
   bili: DanmakuComment[]
   biliCount: number
   biliPart: string
+  danmubox?: DanmakuComment[]
+  danmuboxCount?: number
+  danmuboxFile?: string
+}
+
+export type ActiveDanmuBoxPack = {
+  repo: string
+  hash: string
+  title: string
+  file: string
+  allFiles?: string[]
 }
 
 /**
@@ -136,6 +148,8 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
   const [bvInput, setBvInput] = useState('')
   const [bvPage, setBvPage] = useState(1)
   const [bilibiliBusy, setBilibiliBusy] = useState(false)
+  const activeDanmuBoxRef = useRef<ActiveDanmuBoxPack | null>(null)
+  const [activeDanmuBox, setActiveDanmuBox] = useState<ActiveDanmuBoxPack | null>(null)
   const autoMatchGen = useRef(0)
   const autoMatchAbort = useRef<AbortController | null>(null)
   const manualOpGen = useRef(0)
@@ -236,6 +250,7 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
       dandan: pools.dandan.timeOffset ?? 0,
       bilibili_auto: pools.bilibili_auto.timeOffset ?? 0,
       bilibili_manual: pools.bilibili_manual.timeOffset ?? 0,
+      danmubox: pools.danmubox.timeOffset ?? 0,
       upload: pools.upload.timeOffset ?? 0,
     }),
     [pools],
@@ -246,6 +261,8 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
     currentBangumiKeyRef.current = ''
     hydratedKeyRef.current = ''
     commentsCacheRef.current.clear()
+    activeDanmuBoxRef.current = null
+    setActiveDanmuBox(null)
     setGlobalTimeOffset(0)
     setPools(emptyDanmakuPools())
     setStatus('')
@@ -290,6 +307,9 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
       let biliComments: DanmakuComment[] = []
       let biliCount = 0
       let biliPart = ''
+      let danmuboxComments: DanmakuComment[] = []
+      let danmuboxCount = 0
+      let danmuboxFile = ''
 
       if (cached) {
         dandanComments = cached.dandan
@@ -297,13 +317,54 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
         biliComments = cached.bili
         biliCount = cached.biliCount
         biliPart = cached.biliPart
+        if (cached.danmubox) {
+          danmuboxComments = cached.danmubox
+          danmuboxCount = cached.danmuboxCount || danmuboxComments.length
+          danmuboxFile = cached.danmuboxFile || ''
+        }
       } else {
-        // 1. Fetch Dandan comments and Bilibili auto comments in parallel
-        const [dandanSettled, biliSettled] = await Promise.allSettled([
+        // Check if there is an active DanmuBox archive pack for auto-advance
+        const currentDbPack = activeDanmuBoxRef.current
+        const fetchDanmuBoxPromise = currentDbPack
+          ? (async () => {
+              let xmlList = currentDbPack.allFiles
+              if (!xmlList?.length) {
+                const epRes = await danmakuApi.danmuboxEpisodes(
+                  currentDbPack.repo,
+                  currentDbPack.hash,
+                  { signal },
+                )
+                xmlList = epRes.data || []
+                currentDbPack.allFiles = xmlList
+              }
+              const bestFile = matchBestEpisodeXml(xmlList, targetEpNum)
+              if (bestFile) {
+                const commentsRes = await danmakuApi.danmuboxComments(
+                  currentDbPack.repo,
+                  currentDbPack.hash,
+                  { file: bestFile },
+                  { signal, refresh: bypassClient },
+                )
+                return {
+                  file: bestFile,
+                  comments: commentsRes.data || [],
+                  count: commentsRes.count || (commentsRes.data || []).length,
+                }
+              }
+              return null
+            })().catch((err) => {
+              console.warn('[useDanmakuSession] 弹幕盒子顺延加载失败:', err)
+              return null
+            })
+          : Promise.resolve(null)
+
+        // 1. Fetch Dandan comments, Bilibili auto comments, and DanmuBox in parallel
+        const [dandanSettled, biliSettled, danmuboxSettled] = await Promise.allSettled([
           danmakuApi.comments(epId, { signal, refresh: bypassClient }),
           targetBgmId > 0
             ? danmakuApi.bilibili(`bgm${targetBgmId}`, targetEpNum, { signal, refresh: bypassClient })
             : Promise.resolve(null),
+          fetchDanmuBoxPromise,
         ])
 
         if (dandanSettled.status === 'fulfilled') {
@@ -317,6 +378,16 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
           biliPart = biliSettled.value.meta?.part || `P${targetEpNum}`
         }
 
+        if (danmuboxSettled.status === 'fulfilled' && danmuboxSettled.value) {
+          danmuboxComments = danmuboxSettled.value.comments
+          danmuboxCount = danmuboxSettled.value.count
+          danmuboxFile = danmuboxSettled.value.file
+          if (currentDbPack) {
+            currentDbPack.file = danmuboxFile
+            setActiveDanmuBox({ ...currentDbPack, file: danmuboxFile })
+          }
+        }
+
         // Cache in client-side memory for instant back-and-forth switching
         commentsCacheRef.current.set(cacheKey, {
           dandan: dandanComments,
@@ -324,6 +395,9 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
           bili: biliComments,
           biliCount,
           biliPart,
+          danmubox: danmuboxComments,
+          danmuboxCount,
+          danmuboxFile,
         })
       }
 
@@ -349,6 +423,16 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
             biliComments,
             'replace',
             biliPart,
+            true,
+          )
+        }
+        if (danmuboxComments.length > 0) {
+          next = writePool(
+            next,
+            'danmubox',
+            danmuboxComments,
+            'replace',
+            danmuboxFile.replace(/\.xml$/i, ''),
             true,
           )
         }
@@ -741,6 +825,66 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
     }
   }, [])
 
+  const handleLoadDanmuBox = useCallback(
+    async (
+      repo: string,
+      hash: string,
+      file: string,
+      archiveTitle?: string,
+    ) => {
+      setStatus(`弹幕盒子 · 正在载入 ${file} ...`)
+      try {
+        const res = await danmakuApi.danmuboxComments(repo, hash, { file })
+        const comments = res.data || []
+        const count = res.count || comments.length
+        const packInfo: ActiveDanmuBoxPack = {
+          repo,
+          hash,
+          title: archiveTitle || activeDanmuBoxRef.current?.title || file,
+          file,
+          allFiles: res.allFiles,
+        }
+        activeDanmuBoxRef.current = packInfo
+        setActiveDanmuBox(packInfo)
+
+        setPools((p) =>
+          writePool(
+            p,
+            'danmubox',
+            comments,
+            'replace',
+            file.replace(/\.xml$/i, ''),
+            true,
+          ),
+        )
+
+        const existingAll = [
+          ...pools.dandan.comments,
+          ...pools.bilibili_auto.comments,
+          ...pools.bilibili_manual.comments,
+        ]
+        const { incremental } = deduplicateDanmakuIncremental(
+          existingAll,
+          comments,
+        )
+
+        setStatus(
+          `弹幕盒子 · 已载入 ${count} 条 (${incremental.length} 增量) · ${file}`,
+        )
+      } catch (err) {
+        setStatus(`弹幕盒子载入失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [pools],
+  )
+
+  const handleUnloadDanmuBox = useCallback(() => {
+    activeDanmuBoxRef.current = null
+    setActiveDanmuBox(null)
+    setPools((p) => writePool(p, 'danmubox', [], 'replace', undefined, false))
+    setStatus('弹幕盒子 · 已移除')
+  }, [])
+
   const panel: DanmakuPanelState = useMemo(
     () => ({
       status: status || poolsStatusLine(pools),
@@ -772,6 +916,10 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
       onClearEpisodeTimeOffsets: handleClearEpisodeTimeOffsets,
       danmakuOffset,
       onResetOffset: () => void handleResetOffset(),
+      activeDanmuBox,
+      onLoadDanmuBox: handleLoadDanmuBox,
+      onUnloadDanmuBox: handleUnloadDanmuBox,
+      targetEpisode: Math.max(0, episode + danmakuOffset),
     }),
     [
       status,
@@ -801,6 +949,10 @@ export function useDanmakuSession(opts: UseDanmakuSessionOpts): DanmakuSession {
       handleClearEpisodeTimeOffsets,
       danmakuOffset,
       handleResetOffset,
+      activeDanmuBox,
+      handleLoadDanmuBox,
+      handleUnloadDanmuBox,
+      episode,
     ],
   )
 

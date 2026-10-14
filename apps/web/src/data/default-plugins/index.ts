@@ -17,9 +17,9 @@ import omofun from './omofun.json'
  * - moonci: 月之祠 moonci.com — MacCMS JSON suggest API + multi-road extraction + 1080P MP4 (weight: 65, titlePreference: chinese)
  * - cycani: 次元城 cycani.org — RESTful JSON API + multiple player lines + CF 1080P MP4 (weight: 61, titlePreference: chinese)
  * - mifun: MiFun ios.mifun.org — MacCMS suggest + data.m3u8.in resolver + 1080P Douyin/Baidu MP4 (weight: 61, titlePreference: chinese_compact)
- * - girigiri: girigiri愛動漫 ani.girigirilove.com — MacCMS suggest + encrypt:2 + 1080P CF HLS (weight: 60, titlePreference: chinese)
  * - lzizy: 量子资源 lzizy.net / cj.lziapi.com — Apple CMS V10 JSON API + 全品类影视 + 0ms 纯直链 HLS (weight: 59, titlePreference: chinese)
  * - animoe: Animoe animoe.org — MacCMS suggest API + 多线路字幕组 + 网易云 CDN fMP4 HLS (weight: 58, titlePreference: chinese)
+ * - girigiri: girigiri愛動漫 ani.girigirilove.com — MacCMS suggest + encrypt:2 + 1080P CF HLS (weight: 55, titlePreference: chinese)
  * - mxdm: MacCMS-style third party (weight: 55)
  * - tvtfun: TvTFun tvtfun.net — Next.js RESTful API + 线路D优先 + 1080P BytePlus/Akamai MP4 (weight: 51, titlePreference: chinese)
  * - omofun: 211dm/omofuns — server search adapter (verify gate) + XPath chapters + player_aaaa (weight: 50, titlePreference: original)
@@ -30,9 +30,9 @@ export const DEFAULT_PLUGIN_RULES: PluginRule[] = [
   moonci as PluginRule,
   cycani as PluginRule,
   mifun as PluginRule,
-  girigiri as PluginRule,
   lzizy as PluginRule,
   animoe as PluginRule,
+  girigiri as PluginRule,
   mxdm as PluginRule,
   tvtfun as PluginRule,
   omofun as PluginRule,

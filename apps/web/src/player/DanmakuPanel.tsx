@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  DanmakuAnime,
-  DanmakuEpisode,
-  DanmakuSettings,
+import {
+  type DanmakuAnime,
+  type DanmakuEpisode,
+  type DanmakuSettings,
+  type DanmuBoxEntry,
+  matchBestEpisodeXml,
+  sortDanmakuXmlFiles,
 } from '@animaku/shared'
 import {
   type DanmakuPoolId,
   type DanmakuSourceChip,
 } from '../lib/danmaku-pools'
 import type { PointerMode } from './chrome/usePointerMode'
+import { danmakuApi } from '../lib/plugin-api'
 
-export type DanmakuPanelTab = 'search' | 'settings' | 'import'
+export type DanmakuPanelTab = 'search' | 'danmubox' | 'settings' | 'import'
 
 interface Props {
   open: boolean
@@ -69,12 +73,23 @@ interface Props {
    * desktop keeps the floating side card. Defaults to desktop.
    */
   layout?: PointerMode
+  /** DanmuBox active pack and episode binding */
+  activeDanmuBox?: { repo: string; hash: string; title: string; file: string } | null
+  onLoadDanmuBox?: (
+    repo: string,
+    hash: string,
+    file: string,
+    archiveTitle?: string,
+  ) => Promise<void>
+  onUnloadDanmuBox?: () => void
+  targetEpisode?: number
 }
 
 const TABS = [
   ['search', '弹弹搜索'],
-  ['settings', '弹幕设置'],
+  ['danmubox', '弹幕盒子'],
   ['import', '导入/屏蔽'],
+  ['settings', '弹幕设置'],
 ] as const
 
 export function DanmakuPanel(props: Props) {
@@ -116,7 +131,7 @@ function DesktopCard(props: Props) {
 
   return (
     <div
-      className="kz-danmaku-panel kz-danmaku-panel--desktop absolute z-[85] flex w-[min(23rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)]/95 text-[var(--kz-fg)] shadow-2xl backdrop-blur-2xl"
+      className="kz-danmaku-panel kz-danmaku-panel--desktop absolute z-[85] flex w-[min(24.5rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)]/95 text-[var(--kz-fg)] shadow-2xl backdrop-blur-2xl"
       style={{
         maxHeight: 'min(27rem, calc(100dvh - 6rem))',
       }}
@@ -128,14 +143,14 @@ function DesktopCard(props: Props) {
       data-player-chrome
     >
       {/* Header Tabs */}
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--kz-border)] px-3 py-2 bg-[var(--kz-bg-soft)]/60">
-        <div className="flex gap-1 bg-[var(--kz-bg)]/80 p-0.5 rounded-xl border border-[var(--kz-border)]/60">
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--kz-border)] px-2 sm:px-3 py-2 bg-[var(--kz-bg-soft)]/60">
+        <div className="flex gap-0.5 sm:gap-1 bg-[var(--kz-bg)]/80 p-0.5 rounded-xl border border-[var(--kz-border)]/60 min-w-0">
           {TABS.map(([id, label]) => (
             <button
               key={id}
               type="button"
               data-active={tab === id}
-              className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-150 data-[active=true]:bg-[var(--kz-accent)] data-[active=true]:text-white data-[active=true]:shadow-xs data-[active=false]:text-[var(--kz-fg-muted)] data-[active=false]:hover:bg-[var(--kz-bg-soft)] data-[active=false]:hover:text-[var(--kz-fg)] border-0 bg-transparent cursor-pointer select-none"
+              className="rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 data-[active=true]:bg-[var(--kz-accent)] data-[active=true]:text-white data-[active=true]:shadow-xs data-[active=false]:text-[var(--kz-fg-muted)] data-[active=false]:hover:bg-[var(--kz-bg-soft)] data-[active=false]:hover:text-[var(--kz-fg)] border-0 bg-transparent cursor-pointer select-none"
               onClick={() => onTabChange(id)}
             >
               {label}
@@ -145,7 +160,7 @@ function DesktopCard(props: Props) {
         <button
           type="button"
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded-lg text-xs text-[var(--kz-fg-muted)] hover:bg-[var(--kz-bg-soft)] hover:text-[var(--kz-fg)] transition-colors border-0 bg-transparent cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded-lg text-xs text-[var(--kz-fg-muted)] hover:bg-[var(--kz-bg-soft)] hover:text-[var(--kz-fg)] transition-colors border-0 bg-transparent cursor-pointer shrink-0"
           aria-label="关闭弹幕面板"
         >
           ✕
@@ -166,6 +181,8 @@ function DesktopCard(props: Props) {
       <div className="kz-danmaku-panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="kz-danmaku-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 text-sm text-[var(--kz-fg)] space-y-3">
           {tab === 'search' && <SearchTab {...props} compact={false} />}
+          {tab === 'danmubox' && <DanmuBoxTab {...props} compact={false} />}
+          {tab === 'import' && <ImportTab {...props} compact={false} />}
           {tab === 'settings' && (
             <SettingsTab
               {...props}
@@ -174,7 +191,6 @@ function DesktopCard(props: Props) {
               compact={false}
             />
           )}
-          {tab === 'import' && <ImportTab {...props} compact={false} />}
         </div>
       </div>
 
@@ -228,7 +244,7 @@ function MobileSheet(props: Props) {
   return (
     <div
       ref={modalRef}
-      className="fixed inset-0 z-[99999] m-auto flex flex-col w-[90%] max-w-[23rem] h-[68dvh] max-h-[28rem] bg-[var(--kz-bg-elevated)]/95 text-[var(--kz-fg)] backdrop-blur-2xl border border-[var(--kz-border)] rounded-2xl shadow-2xl overflow-hidden pointer-events-auto animate-in zoom-in-95 duration-150"
+      className="fixed inset-0 z-[99999] m-auto flex flex-col w-[92%] max-w-[24.5rem] h-[68dvh] max-h-[28rem] bg-[var(--kz-bg-elevated)]/95 text-[var(--kz-fg)] backdrop-blur-2xl border border-[var(--kz-border)] rounded-2xl shadow-2xl overflow-hidden pointer-events-auto animate-in zoom-in-95 duration-150"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
@@ -237,8 +253,8 @@ function MobileSheet(props: Props) {
       data-player-chrome
     >
       {/* Header Tabs */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 shrink-0 border-b border-[var(--kz-border)] bg-[var(--kz-bg-soft)]/60">
-        <div className="flex-1 flex gap-1 p-0.5 rounded-xl bg-[var(--kz-bg)] border border-[var(--kz-border)]/60 min-w-0" role="tablist">
+      <div className="flex items-center justify-between gap-1.5 px-2 sm:px-3 py-2 shrink-0 border-b border-[var(--kz-border)] bg-[var(--kz-bg-soft)]/60">
+        <div className="flex-1 flex gap-0.5 sm:gap-1 p-0.5 rounded-xl bg-[var(--kz-bg)] border border-[var(--kz-border)]/60 min-w-0" role="tablist">
           {TABS.map(([id, label]) => (
             <button
               key={id}
@@ -248,8 +264,8 @@ function MobileSheet(props: Props) {
               onClick={() => onTabChange(id)}
               className={
                 tab === id
-                  ? 'flex-1 h-7 rounded-lg text-xs font-semibold bg-[var(--kz-accent)] text-white shadow-xs transition-all border-0 cursor-pointer'
-                  : 'flex-1 h-7 rounded-lg text-xs font-semibold text-[var(--kz-fg-muted)] hover:text-[var(--kz-fg)] transition-all border-0 bg-transparent cursor-pointer'
+                  ? 'flex-1 h-7 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap bg-[var(--kz-accent)] text-white shadow-xs transition-all border-0 cursor-pointer px-1'
+                  : 'flex-1 h-7 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap text-[var(--kz-fg-muted)] hover:text-[var(--kz-fg)] transition-all border-0 bg-transparent cursor-pointer px-1'
               }
             >
               {label}
@@ -279,6 +295,8 @@ function MobileSheet(props: Props) {
       {/* Content Body */}
       <div className="flex-1 min-h-0 h-full overflow-y-auto overscroll-contain p-3.5 space-y-3 text-sm text-[var(--kz-fg)]">
         {tab === 'search' && <SearchTab {...props} compact />}
+        {tab === 'danmubox' && <DanmuBoxTab {...props} compact />}
+        {tab === 'import' && <ImportTab {...props} compact />}
         {tab === 'settings' && (
           <SettingsTab
             {...props}
@@ -287,7 +305,6 @@ function MobileSheet(props: Props) {
             compact
           />
         )}
-        {tab === 'import' && <ImportTab {...props} compact />}
       </div>
 
       {/* Sources Footer */}
@@ -336,6 +353,10 @@ function SourcesFooter({
             activeClass =
               'border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400 font-semibold'
             badgeActive = 'bg-purple-500 text-white font-bold'
+          } else if (s.id === 'danmubox') {
+            activeClass =
+              'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
+            badgeActive = 'bg-amber-500 text-white font-bold'
           } else if (s.id === 'upload') {
             activeClass =
               'border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold'
@@ -808,6 +829,293 @@ function SearchTab(props: Props & { compact: boolean }) {
       <p className="text-[11px] leading-relaxed text-[var(--kz-fg-muted)]">
         弹弹play 匹配写入「弹弹」基准源。可在底部开关各源，或在设置页对齐时间轴。
       </p>
+    </div>
+  )
+}
+
+/* ─── DanmuBox Tab ─── */
+
+function DanmuBoxTab(props: Props & { compact: boolean }) {
+  const [dbKeyword, setDbKeyword] = useState(props.keyword || '')
+  const [searching, setSearching] = useState(false)
+  const [results, setResults] = useState<DanmuBoxEntry[]>([])
+  const [searched, setSearched] = useState(false)
+  const [expandedHash, setExpandedHash] = useState<string | null>(null)
+  const [episodesMap, setEpisodesMap] = useState<Record<string, string[]>>({})
+  const [selectedFilesMap, setSelectedFilesMap] = useState<Record<string, string>>({})
+  const [loadingEps, setLoadingEps] = useState<Record<string, boolean>>({})
+  const [loadingFile, setLoadingFile] = useState<string | null>(null)
+
+  const active = props.activeDanmuBox
+  const danmuboxOffset = props.poolOffsets?.danmubox ?? 0
+
+  const handleSearch = async () => {
+    const kw = dbKeyword.trim()
+    if (!kw) return
+    setSearching(true)
+    setSearched(true)
+    try {
+      const res = await danmakuApi.danmuboxSearch(kw, props.targetEpisode)
+      setResults(res.data || [])
+    } catch (e) {
+      console.error(e)
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  // Pre-search on first mount if keyword exists and results empty
+  useEffect(() => {
+    if (dbKeyword.trim() && !searched && results.length === 0) {
+      void handleSearch()
+    }
+  }, [])
+
+  const toggleExpand = async (item: DanmuBoxEntry) => {
+    const key = `${item.repo}:${item.fileHash}`
+    if (expandedHash === key) {
+      setExpandedHash(null)
+      return
+    }
+    setExpandedHash(key)
+    if (!episodesMap[key]) {
+      setLoadingEps((prev) => ({ ...prev, [key]: true }))
+      try {
+        const res = await danmakuApi.danmuboxEpisodes(item.repo, item.fileHash)
+        const list = sortDanmakuXmlFiles(res.data || [])
+        setEpisodesMap((prev) => ({ ...prev, [key]: list }))
+        const best =
+          props.targetEpisode !== undefined && list.length > 0
+            ? matchBestEpisodeXml(list, props.targetEpisode)
+            : list[0]
+        if (best) {
+          setSelectedFilesMap((prev) => ({ ...prev, [key]: best }))
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoadingEps((prev) => ({ ...prev, [key]: false }))
+      }
+    }
+  }
+
+  const handlePickFile = async (item: DanmuBoxEntry, file: string) => {
+    if (!props.onLoadDanmuBox) return
+    setLoadingFile(`${item.fileHash}:${file}`)
+    try {
+      await props.onLoadDanmuBox(item.repo, item.fileHash, file, item.title)
+    } finally {
+      setLoadingFile(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3.5">
+      {/* Active Pack Status Card */}
+      {active && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-amber-500 text-xs">📦</span>
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 truncate">
+                已装配: {active.title}
+              </span>
+            </div>
+            {props.onUnloadDanmuBox && (
+              <button
+                type="button"
+                onClick={props.onUnloadDanmuBox}
+                className="shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-300 hover:text-red-500 hover:underline border-0 bg-transparent cursor-pointer"
+              >
+                移除
+              </button>
+            )}
+          </div>
+          <div className="text-[11.5px] font-mono text-[var(--kz-fg-muted)] truncate">
+            当前分集: {active.file.replace(/\.xml$/i, '')}
+          </div>
+          <OffsetStepper
+            value={danmuboxOffset}
+            onChange={(v) => props.onSetPoolOffset?.('danmubox', v)}
+            onReset={() => props.onSetPoolOffset?.('danmubox', 0)}
+            label="盒子独立时移"
+            subLabel="微调解决历史压制片头差异"
+          />
+        </div>
+      )}
+
+      {/* Search Bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold text-[var(--kz-fg)]">弹幕盒子历史归档搜索</span>
+          <span className="text-[11px] text-[var(--kz-fg-muted)]">收录 4,299 个历史资源包</span>
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 min-w-0 rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3 py-2 text-xs text-[var(--kz-fg)] placeholder:text-[var(--kz-fg-muted)] outline-none focus:border-[var(--kz-accent)] transition-all"
+            value={dbKeyword}
+            onChange={(e) => setDbKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSearch()
+            }}
+            placeholder="搜索番剧名称（如：寒蝉、龙与虎、石头门）…"
+          />
+          <button
+            type="button"
+            disabled={searching || !dbKeyword.trim()}
+            onClick={() => void handleSearch()}
+            className="shrink-0 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-amber-600 active:scale-95 disabled:opacity-50 transition-all border-0 cursor-pointer shadow-xs"
+          >
+            {searching ? '…' : '搜索'}
+          </button>
+        </div>
+      </div>
+
+      {/* Results List */}
+      <div className="space-y-2">
+        {searching ? (
+          <div className="py-6 text-center text-xs text-[var(--kz-fg-muted)]">
+            正在从内存索引中匹配归档资源…
+          </div>
+        ) : searched && results.length === 0 ? (
+          <div className="py-6 text-center text-xs text-[var(--kz-fg-muted)]">
+            未在弹幕盒子中找到匹配的归档资源，请尝试精简关键词
+          </div>
+        ) : (
+          results.map((item) => {
+            const key = `${item.repo}:${item.fileHash}`
+            const isExpanded = expandedHash === key
+            const epList = episodesMap[key] || []
+            const isEpLoading = loadingEps[key]
+            const bestFile =
+              props.targetEpisode !== undefined && epList.length > 0
+                ? matchBestEpisodeXml(epList, props.targetEpisode)
+                : epList[0]
+            const selectedFile =
+              selectedFilesMap[key] || bestFile || epList[0] || ''
+            const isCurrentActive =
+              active?.repo === item.repo &&
+              active?.hash === item.fileHash &&
+              active?.file === selectedFile
+            const isLoadingThis =
+              loadingFile === `${item.fileHash}:${selectedFile}`
+
+            return (
+              <div
+                key={key}
+                className="rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)]/50 p-2.5 space-y-2 text-xs transition-colors hover:border-[var(--kz-border-hover)]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="font-semibold text-[var(--kz-fg)] leading-snug break-words">
+                      {item.title}
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-[var(--kz-fg-muted)]">
+                      <span className="rounded px-1.5 py-0.2 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-medium">
+                        {item.source}
+                      </span>
+                      <span>{(item.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void toggleExpand(item)}
+                    className="shrink-0 rounded-lg border border-[var(--kz-border)] bg-[var(--kz-bg)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--kz-fg)] hover:border-[var(--kz-accent)] hover:text-[var(--kz-accent)] transition-all cursor-pointer"
+                  >
+                    {isExpanded ? '收起' : '选集'}
+                  </button>
+                </div>
+
+                {isExpanded && (
+                  <div className="mt-2 pt-2 border-t border-[var(--kz-border)]/60 space-y-2.5 animate-in fade-in duration-150">
+                    {isEpLoading ? (
+                      <div className="py-3 text-center text-[11.5px] text-[var(--kz-fg-muted)]">
+                        正在下载并解压包内分集…
+                      </div>
+                    ) : epList.length === 0 ? (
+                      <div className="py-2 text-center text-[11.5px] text-[var(--kz-fg-muted)]">
+                        包内暂无可用分集
+                      </div>
+                    ) : epList.length === 1 ? (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[11.5px] text-[var(--kz-fg)] truncate flex-1 font-mono">
+                          {epList[0].replace(/\.xml$/i, '')}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isCurrentActive || isLoadingThis}
+                          onClick={() => void handlePickFile(item, epList[0])}
+                          className={`rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all border-0 shadow-2xs ${
+                            isCurrentActive
+                              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 cursor-default'
+                              : 'bg-amber-500 hover:bg-amber-600 active:scale-95 text-white disabled:opacity-50 cursor-pointer'
+                          }`}
+                        >
+                          {isLoadingThis
+                            ? '载入中…'
+                            : isCurrentActive
+                              ? '已载入'
+                              : '载入单集弹幕'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 pt-0.5">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-[var(--kz-fg-muted)]">
+                            <span>选择章节分集 (共 {epList.length} 话)</span>
+                            {bestFile && selectedFile === bestFile && (
+                              <span className="text-[10.5px] text-amber-600 dark:text-amber-400 font-medium">
+                                ⚡ 已定位第 {props.targetEpisode ?? 1} 话
+                              </span>
+                            )}
+                          </div>
+                          <CustomSelect
+                            value={selectedFile}
+                            placeholder="选择分集…"
+                            options={epList.map((f) => ({
+                              value: f,
+                              label: f.replace(/\.xml$/i, ''),
+                            }))}
+                            onChange={(val) => {
+                              setSelectedFilesMap((prev) => ({
+                                ...prev,
+                                [key]: String(val),
+                              }))
+                            }}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <div className="min-w-0 flex-1 text-[11px] text-[var(--kz-fg-muted)] truncate font-mono">
+                            {selectedFile ? selectedFile.replace(/\.xml$/i, '') : '未选择'}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!selectedFile || isCurrentActive || isLoadingThis}
+                            onClick={() => void handlePickFile(item, selectedFile)}
+                            className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all border-0 shadow-2xs ${
+                              isCurrentActive
+                                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 cursor-default'
+                                : 'bg-amber-500 hover:bg-amber-600 active:scale-95 text-white disabled:opacity-50 cursor-pointer'
+                            }`}
+                          >
+                            {isLoadingThis
+                              ? '载入中…'
+                              : isCurrentActive
+                                ? '当前已载入'
+                                : '载入此集弹幕'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
     </div>
   )
 }

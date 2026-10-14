@@ -40,6 +40,7 @@ export interface SourceBoardProps {
   defaultSearchEmpty?: boolean
   onAllFallbacksFailed?: () => void
   onAutoProbingChange?: (isProbing: boolean) => void
+  embedded?: boolean
 }
 
 export function SourceBoard({
@@ -62,6 +63,7 @@ export function SourceBoard({
   defaultSearchEmpty,
   onAllFallbacksFailed,
   onAutoProbingChange,
+  embedded = false,
 }: SourceBoardProps) {
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null)
   const [cardKwInputs, setCardKwInputs] = useState<Record<string, string>>({})
@@ -133,71 +135,77 @@ export function SourceBoard({
   return (
     <section
       id="kz-watch-sources"
-      className={clsx(
-        'kz-watch-panel shrink-0 overflow-hidden rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] shadow-sm transition-all duration-300',
-        sourcesOpen && 'kz-watch-sources',
-      )}
+      className={
+        embedded
+          ? 'kz-watch-sources-embedded w-full min-w-0'
+          : clsx(
+              'kz-watch-panel shrink-0 overflow-hidden rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] shadow-sm transition-all duration-300',
+              sourcesOpen && 'kz-watch-sources',
+            )
+      }
     >
-      {/* Header bar */}
-      <button
-        type="button"
-        onClick={() => {
-          onUserAction()
-          startTransition(onToggleSourcesOpen)
-        }}
-        className="kz-bili-sec-head kz-bili-sec-head--btn flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-[var(--kz-bg-hover)]"
-        aria-expanded={sourcesOpen}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-xs sm:text-[13px] text-[var(--kz-fg)] tracking-tight flex items-center gap-1.5">
-            视频源
-            {sourcesTotal > 0 && (
-              <span className="text-[11px] font-normal text-[var(--kz-fg-muted)]">
-                ({sourcesReadyCount}/{sourcesTotal} 就绪)
-              </span>
-            )}
-          </span>
-          <span
-            className="truncate text-[11px] text-[var(--kz-fg-muted)]"
-            title={
-              selection
+      {/* Header bar (only shown in standalone mode) */}
+      {!embedded && (
+        <button
+          type="button"
+          onClick={() => {
+            onUserAction()
+            startTransition(onToggleSourcesOpen)
+          }}
+          className="kz-bili-sec-head kz-bili-sec-head--btn flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-[var(--kz-bg-hover)]"
+          aria-expanded={sourcesOpen}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold text-xs sm:text-[13px] text-[var(--kz-fg)] tracking-tight flex items-center gap-1.5">
+              视频源
+              {sourcesTotal > 0 && (
+                <span className="text-[11px] font-normal text-[var(--kz-fg-muted)]">
+                  ({sourcesReadyCount}/{sourcesTotal} 就绪)
+                </span>
+              )}
+            </span>
+            <span
+              className="truncate text-[11px] text-[var(--kz-fg-muted)]"
+              title={
+                selection
+                  ? `${activePluginName || selection.plugin.name}${
+                      activeEpisodeNumber ? ` · 第 ${activeEpisodeNumber} 集` : ''
+                    }`
+                  : '点选源切换'
+              }
+            >
+              {selection
                 ? `${activePluginName || selection.plugin.name}${
                     activeEpisodeNumber ? ` · 第 ${activeEpisodeNumber} 集` : ''
                   }`
-                : '点选源切换'
-            }
-          >
-            {selection
-              ? `${activePluginName || selection.plugin.name}${
-                  activeEpisodeNumber ? ` · 第 ${activeEpisodeNumber} 集` : ''
-                }`
-              : '点此展开多源'}
-          </span>
-        </div>
+                : '点此展开多源'}
+            </span>
+          </div>
 
-        <span className="kz-bili-sec-more text-[var(--kz-fg-muted)]" aria-hidden>
-          <svg
-            className={clsx(
-              'kz-bili-chevron h-3.5 w-3.5 transition-transform duration-200',
-              sourcesOpen && 'rotate-180',
-            )}
-            viewBox="0 0 16 16"
-            fill="none"
-          >
-            <path
-              d="M4 6.2L8 10.2L12 6.2"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      </button>
+          <span className="kz-bili-sec-more text-[var(--kz-fg-muted)]" aria-hidden>
+            <svg
+              className={clsx(
+                'kz-bili-chevron h-3.5 w-3.5 transition-transform duration-200',
+                sourcesOpen && 'rotate-180',
+              )}
+              viewBox="0 0 16 16"
+              fill="none"
+            >
+              <path
+                d="M4 6.2L8 10.2L12 6.2"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </button>
+      )}
 
       {/* Expanded body */}
       {sourcesOpen && (
-        <div className="border-t border-[var(--kz-border-subtle)] px-2.5 py-2.5 space-y-2">
+        <div className={clsx(!embedded && 'border-t border-[var(--kz-border-subtle)]', 'px-2.5 py-2.5 space-y-2')}>
           {/* Sources List */}
           <div className="flex flex-col gap-1.5">
             {!plugins.length && (

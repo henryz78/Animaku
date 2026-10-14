@@ -8,7 +8,7 @@
 
 将 Animaku 接入 Cloudflare CDN 并配置边缘规则可以实现以下核心价值：
 1. **全站加速与全球边缘就近分发**：前端静态资源（JS/CSS/WebP/Woff2）实现边缘 0 毫秒强缓存命中，大幅降低源站出口带宽。
-2. **上游 API 额度保护与并发削峰**：弹弹 play 弹幕接口、B 站弹幕反代及 Bangumi 元数据在边缘 CDN 实现 30 分钟 ~ 24 小时聚合缓存，极大节约第三方 API 额度并防止高并发击穿。
+2. **上游 API 额度保护与并发削峰**：弹弹 play 弹幕接口、B 站弹幕反代、**弹幕盒子静态归档（30天不可变长缓存削峰解压）** 及 Bangumi 元数据在边缘 CDN 实现 30 分钟 ~ 30 天聚合缓存，极大节约第三方 API 额度，彻底消除归档包解包对源站带来的 CPU 波动。
 3. **恶意嗅探与漏洞扫描秒级拦截**：通过自定义 WAF 规则，在边缘节点直接掐死针对 `.env`、配置文件、数据库备份及 Web 脚本的恶意探测，保护服务器性能与日志纯净度。
 4. **源站隐藏与 DDoS 基础防护**：隐藏源站真实 IP，依托 Cloudflare Anycast 网络抗击四层与七层流量攻击。
 
@@ -132,18 +132,18 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 
 ```
 [ 用户浏览器 Client ]
-       │ (1) 命中 Browser Cache: Vite Assets 1年 / 详情页 30m / 页面 HTML no-cache
+       │ (1) 命中 Browser Cache: Vite Assets 1年 / 弹幕盒子归档 7天(immutable) / 详情页 30m / 页面 HTML no-cache
        ▼
 [ Cloudflare 边缘 CDN (Anycast Edge) ]
-       │ (2) 命中 Edge Cache: 弹幕 30m / 吐槽评论 1h / 番剧推荐 24h / 详情页 1h / Sitemap 6h / 静态资源 1年
+       │ (2) 命中 Edge Cache: 动态弹幕 30m / 弹幕盒子归档 30天 / 吐槽评论 1h / 番剧推荐 24h / 详情页 1h / Sitemap 6h / 静态资源 1年
        ▼
 [ Animaku 服务端 (Hono Node Process) ]
-       │ (3) 命中 L1 In-Memory TTL Cache (Single-Flight 防击穿 + 吐槽 3h Chunk 缓存)
+       │ (3) 命中 L1 In-Memory TTL Cache (Single-Flight 防击穿 + 弹幕盒子 1MB 内存索引 + 吐槽 3h Chunk 缓存)
        ▼
-[ SQLite 数据库持久化缓存 (L2 Cache) ]
-       │ (4) 命中 plugin_search_cache / plugin_chapters_cache / kv_cache
+[ 磁盘持久化 / SQLite 数据库缓存 (L2 Cache) ]
+       │ (4) 命中 .cache/danmubox/ 7z平铺解压缓存 / plugin_search_cache / plugin_chapters_cache / kv_cache
        ▼
-[ 上游源站 / 第三方 API (Bangumi / Dandanplay / 视频源站) ]
+[ 上游源站 / 第三方 API (Bangumi / Dandanplay / DanmuBox GitHub&CDN / 视频源站) ]
 ```
 
 ---
@@ -175,17 +175,21 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
   - **缓存资格 (Cache Eligibility)**：`绕过缓存 (Bypass cache)`
   - **目的**：媒体流实时长连接代理与动态鉴权、管理控制台 API、动态站点配置、健康检查及非 GET 请求全部直通源站，绝不缓存在边缘 CDN。
 
-#### 规则 2：弹幕与 B 站代理 30 分钟边缘缓存 (Danmaku CDN 30m)
-- **规则名称**：`Animaku danmaku CDN 30m`
+#### 规则 2：全量弹幕（弹弹play / B站代理 / 弹幕盒子归档）边缘自适应缓存 (Danmaku CDN Adapt)
+- **规则名称**：`Animaku danmaku CDN Adapt`
 - **匹配表达式 (Expression)**：
   ```text
-  (http.request.method eq "GET" and starts_with(http.request.uri.path, "/api/danmaku/") and http.request.uri.path ne "/api/danmaku/status" and not http.request.uri.query contains "refresh=1" and not http.request.uri.query contains "refresh=true")
+  (http.request.method eq "GET" and starts_with(http.request.uri.path, "/api/danmaku/") and not http.request.uri.path contains "/status" and not http.request.uri.query contains "refresh=1" and not http.request.uri.query contains "refresh=true")
   ```
 - **缓存设置**：
   - **缓存资格 (Cache Eligibility)**：`符合缓存条件 (Eligible for cache)`
-  - **边缘 TTL (Edge TTL)**：`🔘 使用缓存控制标头（如果存在），否则绕过缓存 (Use cache control header if present, bypass cache otherwise)`（服务端通过 `setDanmakuCdnHeaders` 精准下发 `s-maxage=1800`，即 30 分钟；B 站弹幕反代端点 `/api/danmaku/bilibili` 亦包含在内）
-  - **浏览器 TTL (Browser TTL)**：`🔘 接受源服务器 TTL (Respect origin server TTL)`（源站下发 `max-age=0`，避免占用用户本地浏览器内存）
-  - **目的**：聚合全网弹幕拉取，保护弹弹 play 50w/月 额度与 B 站并发限制，同时支持用户带 `?refresh=1` 手动刷新穿透。
+  - **边缘 TTL (Edge TTL)**：`🔘 使用缓存控制标头（如果存在），否则绕过缓存 (Use cache control header if present, bypass cache otherwise)`
+  - **浏览器 TTL (Browser TTL)**：`🔘 接受源服务器 TTL (Respect origin server TTL)`
+  - **精细化协同机制**：
+    * **动态弹幕（弹弹play & B 站代理）**：服务端通过 `setDanmakuCdnHeaders` 下发 `s-maxage=1800` (30 分钟) 与 `max-age=0`（不占用浏览器磁盘，边缘 30 分钟轮换）；
+    * **静态归档弹幕（弹幕盒子 DanmuBox）**：服务端通过 `setDanmuBoxCdnHeaders` 下发 `s-maxage=2592000` (30 天)、`max-age=604800` (7 天浏览器强缓存) 与 `immutable`（不可变）；
+    * 状态接口（如 `/api/danmaku/status` 与 `/api/danmaku/danmubox/status`）通过 `not ... contains "/status"` 自动排除，实时直达；
+  - **目的**：单条规则自适应覆盖动态弹幕与静态冷备，全网一处解压、全球边缘 30 天秒级命中，彻底消除源站反复解包开销；同时支持用户带 `?refresh=1` 手动刷新穿透。
 
 #### 规则 3：静态哈希资源 1 年不可变长缓存 (Static Long Cache)
 - **规则名称**：`animaku-static-long-cache`
@@ -238,7 +242,7 @@ Animaku 系统内部已实施了精细化的响应头策略（`Cache-Control`, `
 ### 4.3 客户端一键穿透与刷新机制
 
 全系统（服务端 + CDN）已统一接入缓存穿透协议：
-- **主动刷新**：只要请求携带 `?refresh=1`、`?refresh=true` 或请求头 `Cache-Control: no-cache`，服务端 `setDanmakuCdnHeaders`、`setBangumiListCdnHeaders`、`setCommentsCdnHeaders`、`setRecommendationsCdnHeaders` 与 `ttl-cache` 会自动下发 `CDN-Cache-Control: no-store` 与 `Cloudflare-CDN-Cache-Control: no-store`，强制穿透边缘 CDN 并回源拉取最新鲜数据。
+- **主动刷新**：只要请求携带 `?refresh=1`、`?refresh=true` 或请求头 `Cache-Control: no-cache`，服务端 `setDanmakuCdnHeaders`、`setDanmuBoxCdnHeaders`、`setBangumiListCdnHeaders`、`setCommentsCdnHeaders`、`setRecommendationsCdnHeaders` 与 `ttl-cache` 会自动下发 `CDN-Cache-Control: no-store` 与 `Cloudflare-CDN-Cache-Control: no-store`，强制穿透边缘 CDN 并回源拉取最新鲜数据。
 - **网站图标 (Favicon 与全尺寸多平台图标) 版本一致性与穿透**：系统采用“单图上传 → 服务端统一派生全套多尺寸图标（16×16、32×32、ICO、180×180、192×192、512×512）”架构。所有尺寸资源、HTML 模板引用及 `site.webmanifest` 动态清单共享同一个全局版本号 `?v=${iconVersion}`。在站长更换图标或重置官方默认时，所有尺寸的 URL 同时变为全新 Cache Key，保证访客与 CDN 秒级同步新图标，各端（PC 标签页、Retina、iOS Safari 桌面、Android PWA）均维持正常的高效缓存（`max-age=86400`），彻底消除新旧图标混用与多尺寸抢占残留。若需对裸根路径 `/favicon.ico` 强制清除历史遗留，亦可在 Cloudflare 控制台 -> **缓存 -> 配置 -> 自定义清除 (Purge by URL)** 中输入 `https://你的域名/favicon.ico` 立即秒级清除边缘单文件缓存。
 
 ---

@@ -14,6 +14,7 @@ import { ipAccessAndRateLimit } from './lib/ip-rate-limit'
 import { bangumiRoutes } from './routes/bangumi'
 import { danmakuRoutes } from './routes/danmaku'
 import { bilibiliDanmakuRoutes } from './routes/bilibili-danmaku'
+import { danmuboxRoutes } from './routes/danmubox'
 import { pluginRoutes } from './routes/plugin'
 import { sourceRoutes } from './routes/source'
 import { mediaRoutes } from './routes/media'
@@ -175,6 +176,7 @@ app.post('/api/admin/indexnow', async (c) => {
 app.route('/api/bangumi', bangumiRoutes)
 app.route('/api/danmaku', danmakuRoutes)
 app.route('/api/danmaku', bilibiliDanmakuRoutes)
+app.route('/api/danmaku', danmuboxRoutes)
 app.route('/api/plugin', pluginRoutes)
 app.route('/api/source', sourceRoutes)
 app.route('/api/media', mediaRoutes)
