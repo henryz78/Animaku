@@ -95,4 +95,31 @@ export function setRecommendationsCdnHeaders(c: HeaderSetter, bypass: boolean): 
   c.header('Cloudflare-CDN-Cache-Control', `max-age=${edge}`)
 }
 
+/** Edge TTL for DanmuBox static archival danmaku responses (30 days). */
+export const DANMUBOX_CDN_S_MAXAGE_SEC = 30 * 24 * 60 * 60
+export const DANMUBOX_BROWSER_MAXAGE_SEC = 7 * 24 * 60 * 60
+
+/**
+ * CDN cache headers for DanmuBox static archival danmaku.
+ * Immutable cold archive: Edge caches 30 days; browsers cache 7 days.
+ * @param bypass — `?refresh=1` or Cache-Control: no-cache from client
+ */
+export function setDanmuBoxCdnHeaders(c: HeaderSetter, bypass: boolean): void {
+  if (bypass) {
+    c.header('Cache-Control', 'private, no-store')
+    c.header('CDN-Cache-Control', 'no-store')
+    c.header('Cloudflare-CDN-Cache-Control', 'no-store')
+    return
+  }
+  const edge = DANMUBOX_CDN_S_MAXAGE_SEC
+  const browser = DANMUBOX_BROWSER_MAXAGE_SEC
+  c.header(
+    'Cache-Control',
+    `public, max-age=${browser}, s-maxage=${edge}, stale-while-revalidate=86400, immutable`,
+  )
+  c.header('CDN-Cache-Control', `max-age=${edge}`)
+  c.header('Cloudflare-CDN-Cache-Control', `max-age=${edge}`)
+}
+
+
 

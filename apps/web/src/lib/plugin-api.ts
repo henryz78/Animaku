@@ -3,6 +3,7 @@ import type {
   DanmakuAnime,
   DanmakuEpisode,
   DanmakuComment,
+  DanmuBoxEntry,
   PluginRule,
   PluginSearchResult,
   PluginChapterResult,
@@ -71,6 +72,43 @@ export const danmakuApi = {
       `/api/danmaku/bilibili?input=${encodeURIComponent(input)}&p=${page}${opts?.refresh ? '&refresh=1' : ''}`,
       withRefreshHeaders({ signal: opts?.signal }, opts?.refresh),
     ),
+  danmuboxSearch: (keyword: string, targetEp?: number, opts?: SignalOpt) =>
+    api<{ data: DanmuBoxEntry[] }>(
+      `/api/danmaku/danmubox/search?keyword=${encodeURIComponent(keyword)}${
+        targetEp !== undefined ? `&ep=${targetEp}` : ''
+      }${opts?.refresh ? '&refresh=1' : ''}`,
+      withRefreshHeaders({ signal: opts?.signal }, opts?.refresh),
+    ),
+  danmuboxEpisodes: (repo: string, hash: string, opts?: SignalOpt) =>
+    api<{ data: string[]; entry: DanmuBoxEntry | null }>(
+      `/api/danmaku/danmubox/episodes?repo=${encodeURIComponent(repo)}&hash=${encodeURIComponent(hash)}${
+        opts?.refresh ? '&refresh=1' : ''
+      }`,
+      withRefreshHeaders({ signal: opts?.signal }, opts?.refresh),
+    ),
+  danmuboxComments: (
+    repo: string,
+    hash: string,
+    params?: { file?: string; ep?: number; season?: string },
+    opts?: SignalOpt,
+  ) => {
+    const q = new URLSearchParams()
+    q.set('repo', repo)
+    q.set('hash', hash)
+    if (params?.file) q.set('file', params.file)
+    if (params?.ep !== undefined) q.set('ep', String(params.ep))
+    if (params?.season) q.set('season', params.season)
+    if (opts?.refresh) q.set('refresh', '1')
+    return api<{
+      data: DanmakuComment[]
+      count: number
+      file: string
+      allFiles: string[]
+    }>(
+      `/api/danmaku/danmubox/comments?${q.toString()}`,
+      withRefreshHeaders({ signal: opts?.signal }, opts?.refresh),
+    )
+  },
 }
 
 export const pluginApi = {

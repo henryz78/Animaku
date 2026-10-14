@@ -346,3 +346,156 @@ export function extractBvid(input: string): string | null {
   const m = s.match(/BV[0-9A-Za-z]+/)
   return m ? m[0] : null
 }
+
+export const DANMUBOX_SOURCES = [
+  'bilibili',
+  '优酷',
+  '爱奇艺',
+  '腾讯',
+  '第一弹',
+  '动画疯',
+  'AcFun',
+  '搜狐',
+] as const
+
+export interface DanmuBoxEntry {
+  title: string
+  size: number
+  source: string
+  repo: string
+  fileHash: string
+  downloadUrl?: string
+}
+
+/**
+ * Check whether a segmented archive title matches the target episode.
+ * Handles partitioned ranges like `[1~225]`, `(226-450)`, `[13~33]`, `1-25话全`.
+ * If no range is present, returns true (not restricted by range).
+ */
+export function matchArchiveRange(title: string, targetEpisode: number): boolean {
+  if (!title || !Number.isFinite(targetEpisode) || targetEpisode <= 0) return true
+  const m =
+    title.match(/[\[\(（](\d+)\s*[~-]\s*(\d+)[\]\)）]/) ||
+    title.match(/(?:^|\D)(\d+)\s*[-~]\s*(\d+)\s*(?:话|集)全/)
+  if (!m) return true
+  const start = parseInt(m[1], 10)
+  const end = parseInt(m[2], 10)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return true
+  return targetEpisode >= Math.min(start, end) && targetEpisode <= Math.max(start, end)
+}
+
+/**
+ * Select the best matching episode XML filename from a list of files in a 7z archive.
+ */
+export function matchBestEpisodeXml(
+  xmlFileList: string[],
+  targetEpisode: number,
+  seasonTag?: string,
+): string | null {
+  if (!xmlFileList || !xmlFileList.length) return null
+  if (xmlFileList.length === 1) return xmlFileList[0]
+
+  const epStr = targetEpisode.toString()
+  const epPad = epStr.padStart(2, '0')
+
+  let bestMatch: { file: string; score: number } = { file: '', score: -1 }
+
+  for (const file of xmlFileList) {
+    let score = 0
+    const lower = file.toLowerCase()
+
+    // 1. Season tag matching
+    if (seasonTag && lower.includes(seasonTag.toLowerCase())) {
+      score += 40
+    }
+
+    // 2. Episode number pattern scoring
+    // Priority 1: "第03话", "第3集", "03话"
+    if (new RegExp(`第\\s*0*${epStr}\\s*[话集]|0*${epStr}\\s*[话集]`, 'i').test(file)) {
+      score += 50
+    }
+    // Priority 2: "EP03", "E03", "ep.03"
+    else if (new RegExp(`(?:ep|e)\\.?\\s*0*${epStr}(?:[^0-9]|$)`, 'i').test(file)) {
+      score += 45
+    }
+    // Priority 3: Part notation "P03", "P3", "_03"
+    else if (new RegExp(`(?:^|[\\s_\\[\\(])p0*${epStr}(?:[^0-9]|$)`, 'i').test(file)) {
+      score += 35
+    }
+    // Priority 4: Standalone bounded number "[03]", " 03 ", "- 03."
+    else if (
+      new RegExp(
+        `(?:^|[\\s_\\-\\[\\(])(?:0*${epStr}|${epPad})(?:[\\s_\\-\\]\\.]|$)`,
+      ).test(file)
+    ) {
+      score += 25
+    }
+
+    if (score > bestMatch.score) {
+      bestMatch = { file, score }
+    }
+  }
+
+  return bestMatch.score > 0 ? bestMatch.file : xmlFileList[0]
+}
+
+const CHINESE_NUM_MAP: Record<string, number> = {
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+}
+
+function getSeasonOrderScore(pathStr: string): number {
+  const m = pathStr.match(/第([一二三四五六七八九十\d]+)季/)
+  if (m) {
+    return parseInt(m[1], 10) || CHINESE_NUM_MAP[m[1]] || 99
+  }
+  const sMatch = pathStr.match(/(?:season|s)\s*0*(\d+)/i)
+  if (sMatch) {
+    return parseInt(sMatch[1], 10)
+  }
+  return 999
+}
+
+/**
+ * Naturally sorts Danmaku XML files:
+ * 1. Chronological season order (第一季 -> 第二季 -> OVA)
+ * 2. Natural numeric episode order (1, 2, 3 ... 9, 10, 11 instead of 1, 10, 11 ... 2)
+ */
+export function sortDanmakuXmlFiles(files: string[]): string[] {
+  return [...files].sort((a, b) => {
+    // 1. Season order
+    const sA = getSeasonOrderScore(a)
+    const sB = getSeasonOrderScore(b)
+    if (sA !== sB) return sA - sB
+
+    // 2. Directory comparison
+    const normA = a.replace(/\\/g, '/')
+    const normB = b.replace(/\\/g, '/')
+    const lastSlashA = normA.lastIndexOf('/')
+    const lastSlashB = normB.lastIndexOf('/')
+    const dirA = lastSlashA >= 0 ? normA.substring(0, lastSlashA) : ''
+    const dirB = lastSlashB >= 0 ? normB.substring(0, lastSlashB) : ''
+
+    if (dirA !== dirB) {
+      return dirA.localeCompare(dirB, 'zh-Hans-CN', { numeric: true })
+    }
+
+    // 3. Natural numeric compare on filename
+    const fileA = lastSlashA >= 0 ? normA.substring(lastSlashA + 1) : normA
+    const fileB = lastSlashB >= 0 ? normB.substring(lastSlashB + 1) : normB
+    return fileA.localeCompare(fileB, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  })
+}
+
+

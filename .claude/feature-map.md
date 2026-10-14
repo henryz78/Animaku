@@ -36,6 +36,7 @@
 - 跨平台映射服务 (bangumi-data)：`apps/server/src/lib/bangumi-data.ts`, `apps/server/src/db/repositories/bangumi-data.ts`（BGM ID到全网多平台ID映射、SQLite持久化、7天周期异步增量同步与港澳台回退队列）
 - 弹弹 API 代理与服务端缓存：`apps/server/src/routes/danmaku.ts`, `apps/server/src/lib/dandan.ts`
 - B 站弹幕反代与 Proto 解析：`apps/server/src/routes/bilibili-danmaku.ts`（B 站 PGC/UGC/短链/BGM映射弹幕反代、media_id逆向解析、ep/ss/md/bgm/bv/av 多模态解析与 30m TTL 缓存）
+- 弹幕盒子历史归档服务 (DanmuBox)：`apps/server/src/lib/danmubox/index.ts`, `apps/server/src/lib/danmubox/archive.ts`, `apps/server/src/routes/danmubox.ts`（AES-256-ECB真Key解密、1.5s自适应网络探活直连/CDN自动升降级、纯JS/WASM 7z解包磁盘平铺缓存、30天Cloudflare边缘缓存、长篇分卷区间路由与切集自动顺延）
 
 ## 4. OP/ED 跳过与标记助手 (OP/ED Markers & Community Contribution)
 - OP/ED 标记助手抽屉：`apps/web/src/player/chrome/OpedMarkerDrawer.tsx`

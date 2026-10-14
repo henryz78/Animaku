@@ -43,6 +43,16 @@ export interface DanmakuPanelState {
   /** Relative offset for danmaku episode alignment (e.g. -1 for prologue shift) */
   danmakuOffset?: number
   onResetOffset?: () => void
+  /** DanmuBox active pack and episode binding */
+  activeDanmuBox?: { repo: string; hash: string; title: string; file: string } | null
+  onLoadDanmuBox?: (
+    repo: string,
+    hash: string,
+    file: string,
+    archiveTitle?: string,
+  ) => Promise<void>
+  onUnloadDanmuBox?: () => void
+  targetEpisode?: number
 }
 
 export interface VideoPlayerProps {

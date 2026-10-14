@@ -1,12 +1,18 @@
 import { deduplicateDanmakuIncremental, type DanmakuComment } from '@animaku/shared'
 
 /** Independent comment pools that can be shown / hidden without reloading */
-export type DanmakuPoolId = 'dandan' | 'bilibili_auto' | 'bilibili_manual' | 'upload'
+export type DanmakuPoolId =
+  | 'dandan'
+  | 'bilibili_auto'
+  | 'bilibili_manual'
+  | 'danmubox'
+  | 'upload'
 
 export const DANMAKU_POOL_ORDER: DanmakuPoolId[] = [
   'dandan',
   'bilibili_auto',
   'bilibili_manual',
+  'danmubox',
   'upload',
 ]
 
@@ -14,6 +20,7 @@ export const DANMAKU_POOL_LABEL: Record<DanmakuPoolId, string> = {
   dandan: '弹弹',
   bilibili_auto: 'B站',
   bilibili_manual: 'bilibili',
+  danmubox: '弹幕盒子',
   upload: '用户上传',
 }
 
@@ -44,6 +51,7 @@ export function emptyDanmakuPools(): DanmakuPools {
     dandan: { comments: [], enabled: true, timeOffset: 0 },
     bilibili_auto: { comments: [], enabled: false, timeOffset: 0 },
     bilibili_manual: { comments: [], enabled: true, timeOffset: 0 },
+    danmubox: { comments: [], enabled: true, timeOffset: 0 },
     upload: { comments: [], enabled: true, timeOffset: 0 },
   }
 }
