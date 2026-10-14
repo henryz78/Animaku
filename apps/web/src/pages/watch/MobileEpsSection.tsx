@@ -59,6 +59,8 @@ export function MobileEpsSection({
   onPickSlot,
   onPickEpisode,
   onRefreshChapters,
+  embedded = false,
+  isActive = true,
 }: {
   bangumiId?: number
   roads: MobileEpsRoad[]
@@ -83,6 +85,8 @@ export function MobileEpsSection({
   onPickSlot?: (slot: PlayableSlot, roadIndex: number) => void
   onPickEpisode: (epIndex: number, roadIndex: number) => void
   onRefreshChapters?: () => void
+  embedded?: boolean
+  isActive?: boolean
 }) {
   const watchedMap = useWatchedStore((s) =>
     bangumiId ? s.records[bangumiId] : undefined,
@@ -239,7 +243,7 @@ export function MobileEpsSection({
         block: 'center',
       })
     }
-  }, [listExpanded, playingIndex, visibleEpisodes])
+  }, [listExpanded, playingIndex, visibleEpisodes, isActive])
 
   // Keep active road pill in view when many lines overflow horizontally
   useEffect(() => {
@@ -263,14 +267,27 @@ export function MobileEpsSection({
       : ''
 
   return (
-    <section className="kz-watch-eps kz-watch-eps--mobile kz-watch-panel min-w-0 max-w-full overflow-hidden">
-      <div className="kz-bili-sec-head">
-        <h2 className="kz-bili-sec-title">
-          选集
-          {countLabel ? (
-            <span className="kz-bili-sec-count">{countLabel}</span>
-          ) : null}
-        </h2>
+    <section
+      className={
+        embedded
+          ? 'kz-watch-eps-embedded w-full min-w-0'
+          : 'kz-watch-eps kz-watch-eps--mobile kz-watch-panel min-w-0 max-w-full overflow-hidden'
+      }
+    >
+      <div className={clsx('kz-bili-sec-head', embedded && 'px-2.5 pt-2 pb-1 border-none')}>
+        {!embedded && (
+          <h2 className="kz-bili-sec-title">
+            选集
+            {countLabel ? (
+              <span className="kz-bili-sec-count">{countLabel}</span>
+            ) : null}
+          </h2>
+        )}
+        {embedded && (
+          <div className="text-xs text-[var(--kz-fg-muted)] font-medium">
+            {countLabel ? `播放进度 ${countLabel}` : '分集列表'}
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5 ml-auto">
           {hasSelection && onRefreshChapters && (

@@ -18,10 +18,10 @@ export function MobileWatchLayout({
   recommendations,
   comments,
 }: {
-  meta: ReactNode
+  meta?: ReactNode
   episodes: ReactNode
   player: ReactNode
-  sources: ReactNode
+  sources?: ReactNode
   recommendations?: ReactNode
   comments?: ReactNode
 }) {
@@ -34,8 +34,8 @@ export function MobileWatchLayout({
         {player}
       </div>
       <div className="space-y-3 px-3.5 sm:px-4">
-        <div className="kz-watch-meta min-w-0">{meta}</div>
-        <div className="min-w-0">{sources}</div>
+        {meta && <div className="kz-watch-meta min-w-0">{meta}</div>}
+        {sources && <div className="min-w-0">{sources}</div>}
         <div className="min-w-0">{episodes}</div>
         {recommendations && <div className="min-w-0">{recommendations}</div>}
         {comments && <div className="min-w-0">{comments}</div>}
