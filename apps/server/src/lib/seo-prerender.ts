@@ -188,11 +188,12 @@ export function applySiteBrandingToHtml(
   let result = html
 
   if (cfg.siteName || cfg.siteTagline) {
+    const siteTitle = cfg.siteTagline
+      ? `${cfg.siteName || 'Animaku'} - ${cfg.siteTagline}`
+      : cfg.siteName || 'Animaku'
+    const dynamicDesc = formatDefaultDescription(cfg.siteName, cfg.siteTagline)
+
     if (cfg.siteName) {
-      if (options.replaceTitle) {
-        const siteTitle = cfg.siteTagline ? `${cfg.siteName} - ${cfg.siteTagline}` : cfg.siteName
-        result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
-      }
       result = result.replace(
         /<meta\s+property=["']og:site_name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
         `<meta property="og:site_name" content="${escapeHtml(cfg.siteName)}" />`,
@@ -203,11 +204,55 @@ export function applySiteBrandingToHtml(
       )
     }
 
+    if (options.replaceTitle) {
+      result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
+      result = result.replace(
+        /<meta\s+property=["']og:title["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta property="og:title" content="${escapeHtml(siteTitle)}" />`,
+      )
+      result = result.replace(
+        /<meta\s+name=["']twitter:title["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta name="twitter:title" content="${escapeHtml(siteTitle)}" />`,
+      )
+
+      // 动态更新首页原始 HTML 骨架中的 h1 与 p 标签，保证爬虫在首屏无 JS 情况下抓到自定义品牌
+      const siteHeading = cfg.siteTagline
+        ? `${cfg.siteName || 'Animaku'} - ${cfg.siteTagline}`
+        : `${cfg.siteName || 'Animaku'} 动漫 - 在线高清动画多源聚合弹幕平台`
+      result = result.replace(
+        /<h1\s+class=["']sr-only["']>[\s\S]*?<\/h1>/i,
+        `<h1 class="sr-only">${escapeHtml(siteHeading)}</h1>`,
+      )
+      result = result.replace(
+        /<p\s+class=["']sr-only["']>[\s\S]*?<\/p>/i,
+        `<p class="sr-only">${escapeHtml(dynamicDesc)}</p>`,
+      )
+
+      // 动态重写首页 HTML 中预埋的 WebSite 结构化数据 (JSON-LD)，覆盖静态写死的 name 与 description
+      const websiteJsonRegex =
+        /(<script\s+type=["']application\/ld\+json["']\s+data-animaku-jsonld=["']1["']>\s*\{[\s\S]*?"@type"\s*:\s*"WebSite"[\s\S]*?<\/script>)/i
+      result = result.replace(websiteJsonRegex, (match) => {
+        try {
+          const jsonStr = match.replace(/^<script[^>]*>/i, '').replace(/<\/script>$/i, '')
+          const obj = JSON.parse(jsonStr)
+          if (cfg.siteName) {
+            obj.name = cfg.siteName
+            if (Array.isArray(obj.alternateName)) {
+              obj.alternateName = Array.from(new Set([cfg.siteName, ...obj.alternateName]))
+            }
+          }
+          obj.description = dynamicDesc
+          return `<script type="application/ld+json" data-animaku-jsonld="1">\n      ${escapeJsonLdScript(JSON.stringify(obj, null, 2))}\n    </script>`
+        } catch {
+          return match
+        }
+      })
+    }
+
     // 默认 description 仅在未显式关闭 replaceDescription（且 replaceTitle 未置否）时注入，
     // 避免覆盖详情页已渲染好的番剧专属简介 meta description。
     const shouldReplaceDesc = options.replaceDescription ?? options.replaceTitle ?? true
     if (shouldReplaceDesc) {
-      const dynamicDesc = formatDefaultDescription(cfg.siteName, cfg.siteTagline)
       result = result.replace(
         /<meta\s+name=["']description["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
         `<meta name="description" content="${escapeHtml(dynamicDesc)}" />`,

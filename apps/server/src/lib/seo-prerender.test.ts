@@ -304,20 +304,43 @@ test('applySiteBrandingToHtml: replaces description tags when siteName and siteT
 <head>
   <title>Animaku 动漫</title>
   <meta name="description" content="Animaku 多资源聚合..." />
+  <script type="application/ld+json" data-animaku-jsonld="1">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Animaku 动漫",
+      "description": "Animaku 多资源聚合..."
+    }
+  </script>
+  <meta property="og:title" content="Animaku 动漫" />
   <meta property="og:description" content="Animaku 多资源聚合..." />
+  <meta name="twitter:title" content="Animaku 动漫" />
   <meta name="twitter:description" content="Animaku 多资源聚合..." />
 </head>
-<body><div id="root"></div></body>
+<body>
+  <div id="root">
+    <h1 class="sr-only">Animaku 动漫 - 在线高清动画多源聚合弹幕平台</h1>
+    <p class="sr-only">Animaku 多资源聚合...</p>
+  </div>
+</body>
 </html>`
 
     const result = applySiteBrandingToHtml(template)
     assert.ok(result.includes('<title>极简动漫 - 纯粹二次元</title>'))
+    assert.ok(result.includes('<meta property="og:title" content="极简动漫 - 纯粹二次元" />'))
+    assert.ok(result.includes('<meta name="twitter:title" content="极简动漫 - 纯粹二次元" />'))
     assert.ok(result.includes('content="极简动漫 - 纯粹二次元，多资源聚合'))
+    assert.ok(result.includes('<h1 class="sr-only">极简动漫 - 纯粹二次元</h1>'))
+    assert.ok(result.includes('<p class="sr-only">极简动漫 - 纯粹二次元，多资源聚合'))
+    assert.ok(result.includes('"name": "极简动漫"'))
+    assert.ok(result.includes('"description": "极简动漫 - 纯粹二次元，多资源聚合'))
 
-    // When replaceTitle/replaceDescription is false (e.g. subject page), custom description is not overwritten
+    // When replaceTitle/replaceDescription is false (e.g. subject page), custom description and title are not overwritten
     const preserveDesc = applySiteBrandingToHtml(template, { replaceTitle: false })
     assert.ok(preserveDesc.includes('<title>Animaku 动漫</title>'))
+    assert.ok(preserveDesc.includes('<meta property="og:title" content="Animaku 动漫" />'))
     assert.ok(preserveDesc.includes('content="Animaku 多资源聚合..."'))
+    assert.ok(preserveDesc.includes('<h1 class="sr-only">Animaku 动漫 - 在线高清动画多源聚合弹幕平台</h1>'))
   } finally {
     saveSiteConfig({
       siteName: original.siteName,
