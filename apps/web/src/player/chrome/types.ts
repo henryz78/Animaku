@@ -23,6 +23,8 @@ export interface PlayerControlsProps {
   volumeMenuOpen: boolean
   current?: number
   duration: number
+  /** Expected episode duration in seconds from Bangumi metadata for OP/ED mismatch audit */
+  expectedDurationSeconds?: number
   progress?: number
   comments?: DanmakuComment[]
   danmakuEnabled: boolean

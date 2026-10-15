@@ -1,5 +1,11 @@
 import type { PlayerSettings } from './player'
 
+/**
+ * 视频源时长与 Bangumi 单集官方时长允许的最大绝对误差 (秒)。
+ * 若误差超过此阈值，说明当前视频源可能存在前置广告、删减、混剪或错位，静默停用 OP/ED 自动跳过。
+ */
+export const DURATION_MISMATCH_THRESHOLD_S = 4
+
 export interface OpedSkipContext {
   /** 当前播放时间 (秒) */
   currentTime: number
@@ -7,6 +13,8 @@ export interface OpedSkipContext {
   prevTime: number
   /** 视频总时长 (秒) */
   duration: number
+  /** Bangumi 元数据提供的该集预期时长 (秒) */
+  expectedDurationSeconds?: number
   /** 是否正在手动拖动进度条 */
   isSeeking?: boolean
   /** 是否处于跳过繁忙期 (防抖期) */
@@ -52,6 +60,21 @@ export function determineOpedAction(ctx: OpedSkipContext): OpedSkipDecision {
   if (p.preferBangumiOped === false) return { action: 'none' }
   // 若本集用户已选择完整播放，直接返回 none
   if (ctx.keepWholeEpisode) return { action: 'none' }
+
+  // 视频源时长审核：若提供了 Bangumi 官方单集时长，且当前视频时长与其绝对差距超过容差 (4s)，
+  // 说明当前视频源可能存在片头拼接广告、删减、混剪或集数错位，强制停用跳过以防跳错正片。
+  if (
+    typeof ctx.expectedDurationSeconds === 'number' &&
+    Number.isFinite(ctx.expectedDurationSeconds) &&
+    ctx.expectedDurationSeconds > 0
+  ) {
+    if (
+      Math.abs(d - ctx.expectedDurationSeconds) >
+      DURATION_MISMATCH_THRESHOLD_S
+    ) {
+      return { action: 'none' }
+    }
+  }
 
   const safeMax = d - 0.1
   const isFirstEp =

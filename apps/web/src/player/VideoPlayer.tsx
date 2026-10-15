@@ -94,6 +94,7 @@ export function VideoPlayer({
   episodeIndex,
   totalEpisodes,
   officialOpedData,
+  expectedDurationSeconds,
   widescreen: controlledWidescreen,
   onToggleWidescreen: controlledToggleWidescreen,
 }: VideoPlayerProps) {
@@ -434,6 +435,7 @@ export function VideoPlayer({
         currentTime: t,
         prevTime: prevT,
         duration: d,
+        expectedDurationSeconds,
         isSeeking: isSeekingRefHolder.current,
         isSkipBusy: skipBusyRef.current,
         episodeIndex,
@@ -974,6 +976,7 @@ export function VideoPlayer({
     srMenuOpen,
     volumeMenuOpen,
     duration,
+    expectedDurationSeconds,
     comments,
     danmakuEnabled: danmaku.enabled !== false,
     danmakuSimplify: Boolean(danmaku.simplify),

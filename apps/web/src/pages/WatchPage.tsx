@@ -380,6 +380,7 @@ export function WatchPage() {
           episodeIndex={w.episode?.sourceIndex ?? (w.episode?.episode === 1 ? 0 : undefined)}
           totalEpisodes={item?.totalEpisodes || item?.eps || 12}
           officialOpedData={w.bgmOpedData}
+          expectedDurationSeconds={w.expectedDurationSeconds}
           widescreen={widescreen}
           onToggleWidescreen={() => setWidescreen((v) => !v)}
         />

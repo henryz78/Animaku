@@ -194,4 +194,58 @@ test('OP/ED 首集保护与跳过判定引擎测试', async (t) => {
     })
     assert.deepEqual(busy, { action: 'none' })
   })
+
+  await t.test('场景 10: 视频源时长审核 (expectedDurationSeconds)', () => {
+    // 10.1: 时长差异在 4s 允许容差范围内 (相差 3s) -> 正常触发跳过/提示
+    const validMatch = determineOpedAction({
+      ...baseContext,
+      duration: 1400,
+      expectedDurationSeconds: 1403,
+      prevTime: 9.8,
+      currentTime: 10.1,
+    })
+    assert.deepEqual(validMatch, {
+      action: 'prompt',
+      type: 'op',
+      targetTime: 100,
+    })
+
+    // 10.2: 时长差异正好在 4s 临界点 -> 正常触发
+    const exactThreshold = determineOpedAction({
+      ...baseContext,
+      duration: 1400,
+      expectedDurationSeconds: 1404,
+      prevTime: 9.8,
+      currentTime: 10.1,
+    })
+    assert.deepEqual(exactThreshold, {
+      action: 'prompt',
+      type: 'op',
+      targetTime: 100,
+    })
+
+    // 10.3: 时长差异超过 4s (当前源多了片头广告/或被剪辑，相差 5s) -> 静默停用，返回 none
+    const oversizedMismatch = determineOpedAction({
+      ...baseContext,
+      duration: 1400,
+      expectedDurationSeconds: 1405,
+      prevTime: 9.8,
+      currentTime: 10.1,
+    })
+    assert.deepEqual(oversizedMismatch, { action: 'none' })
+
+    // 10.4: expectedDurationSeconds 为 0 或未提供时 -> 不阻断
+    const zeroExpected = determineOpedAction({
+      ...baseContext,
+      duration: 1400,
+      expectedDurationSeconds: 0,
+      prevTime: 9.8,
+      currentTime: 10.1,
+    })
+    assert.deepEqual(zeroExpected, {
+      action: 'prompt',
+      type: 'op',
+      targetTime: 100,
+    })
+  })
 })
