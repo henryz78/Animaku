@@ -26,6 +26,24 @@ export function formatSubjectTitle(
 }
 
 /**
+ * 格式化站点全局 / 首页的标准 SEO Meta Description。
+ * 联动用户在后台设置的网站名称与副标题。
+ */
+export function formatDefaultDescription(
+  siteName?: string,
+  siteTagline?: string,
+): string {
+  const name = (siteName || '').trim()
+  const tagline = (siteTagline || '').trim()
+  if (!name && !tagline) {
+    return 'Animaku 多资源聚合的日漫番剧、剧场版动画在线观看，支持高性能自研弹幕播放、画质超分、OP / ED 智能跳过、Bangumi 每日更新时间表与追番历史。'
+  }
+  const brand = name || DEFAULT_SITE_NAME
+  const sub = tagline ? ` - ${tagline}` : ''
+  return `${brand}${sub}，多资源聚合的日漫番剧、剧场版动画在线观看，支持高性能自研弹幕播放、画质超分、OP / ED 智能跳过、Bangumi 每日更新时间表与追番历史。`
+}
+
+/**
  * 格式化番剧详情/播放页的标准 SEO Meta Description。
  * 覆盖场景：前置引导真实核心能力（动漫在线观看、聚合多个视频源、弹幕与选集播放），后接剧情简介截取。
  */
@@ -33,9 +51,11 @@ export function formatSubjectDescription(
   name: string,
   rawSummary?: string,
   maxLen = 160,
+  siteName = DEFAULT_SITE_NAME,
 ): string {
   const baseName = (name || '').trim() || '番剧'
-  const prefix = `《${baseName}》动漫在线观看。Animaku 聚合多个视频源，支持弹幕与选集播放。`
+  const effectiveSiteName = (siteName || '').trim() || DEFAULT_SITE_NAME
+  const prefix = `《${baseName}》动漫在线观看。${effectiveSiteName} 聚合多个视频源，支持弹幕与选集播放。`
   const summary = (rawSummary || '').replace(/\s+/g, ' ').trim()
   if (!summary) {
     return prefix

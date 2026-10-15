@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   formatSubjectTitle,
   formatSubjectDescription,
+  formatDefaultDescription,
   generateSubjectKeywords,
 } from './seo'
 
@@ -65,6 +66,27 @@ test('formatSubjectDescription: leads with intent keywords and truncates summary
   assert.ok(desc3.endsWith('…'))
   assert.ok(desc3.length <= 150)
   assert.ok(!/(1080P|高清|全集|无广告)/.test(desc3))
+
+  // Case 4: custom site name
+  const desc4 = formatSubjectDescription('葬送的芙莉莲', undefined, 160, '极简动漫')
+  assert.equal(
+    desc4,
+    '《葬送的芙莉莲》动漫在线观看。极简动漫 聚合多个视频源，支持弹幕与选集播放。',
+  )
+})
+
+test('formatDefaultDescription: dynamically integrates custom site name and tagline', () => {
+  // Case 1: default fallback
+  const d1 = formatDefaultDescription()
+  assert.ok(d1.startsWith('Animaku 多资源聚合'))
+
+  // Case 2: custom site name only
+  const d2 = formatDefaultDescription('二次元喵')
+  assert.ok(d2.startsWith('二次元喵，多资源聚合'))
+
+  // Case 3: custom site name and tagline
+  const d3 = formatDefaultDescription('二次元喵', '超清弹幕动漫站')
+  assert.ok(d3.startsWith('二次元喵 - 超清弹幕动漫站，多资源聚合'))
 })
 
 test('generateSubjectKeywords: generates comprehensive exact & proximity keywords', () => {

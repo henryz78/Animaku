@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EMPTY_ARRAY } from '../lib/stable'
 import { preloadVideoPlayer } from '../player/lazy'
 import { useInView } from '../lib/use-in-view'
+import { useSiteBranding } from '../lib/site-branding'
 import { DESKTOP_MEDIA_QUERY } from '../components/hero-cover-flow.constants'
 
 const SECTION_LIMIT = 18
@@ -40,6 +41,7 @@ const ovasQueryFn = ({ signal }: { signal?: AbortSignal }) =>
 
 export function HomePage() {
   const queryClient = useQueryClient()
+  const { productName, tagline } = useSiteBranding()
   const [isDesktop, setIsDesktop] = useState(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return true
@@ -154,7 +156,9 @@ export function HomePage() {
   return (
     <div className="space-y-12 sm:space-y-14">
       {/* 语义化全站顶级主标题：对齐移动优先索引与无障碍辅助树，视觉上通过 sr-only 隐式呈现 */}
-      <h1 className="sr-only">Animaku 动漫 - 在线高清动画多源聚合弹幕平台</h1>
+      <h1 className="sr-only">
+        {productName} - {tagline || '在线高清动画多源聚合弹幕平台'}
+      </h1>
 
       {/* 顶部 3D Cover Flow 焦点舞台 */}
       {trending.isLoading ? (

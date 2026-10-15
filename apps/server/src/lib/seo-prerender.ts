@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { Context } from 'hono'
 import {
   coverOf,
+  formatDefaultDescription,
   formatSubjectDescription,
   formatSubjectTitle,
   generateSubjectKeywords,
@@ -178,24 +179,48 @@ export function stripTemplateHomepageSeo(html: string): string {
  */
 export function applySiteBrandingToHtml(
   html: string,
-  options: { replaceTitle?: boolean } = { replaceTitle: true },
+  options: { replaceTitle?: boolean; replaceDescription?: boolean } = {
+    replaceTitle: true,
+    replaceDescription: true,
+  },
 ): string {
   const cfg = getSiteConfig()
   let result = html
 
-  if (cfg.siteName) {
-    if (options.replaceTitle) {
-      const siteTitle = cfg.siteTagline ? `${cfg.siteName} - ${cfg.siteTagline}` : cfg.siteName
-      result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
+  if (cfg.siteName || cfg.siteTagline) {
+    if (cfg.siteName) {
+      if (options.replaceTitle) {
+        const siteTitle = cfg.siteTagline ? `${cfg.siteName} - ${cfg.siteTagline}` : cfg.siteName
+        result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
+      }
+      result = result.replace(
+        /<meta\s+property=["']og:site_name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta property="og:site_name" content="${escapeHtml(cfg.siteName)}" />`,
+      )
+      result = result.replace(
+        /<meta\s+name=["']application-name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta name="application-name" content="${escapeHtml(cfg.siteName)}" />`,
+      )
     }
-    result = result.replace(
-      /<meta\s+property=["']og:site_name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
-      `<meta property="og:site_name" content="${escapeHtml(cfg.siteName)}" />`,
-    )
-    result = result.replace(
-      /<meta\s+name=["']application-name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
-      `<meta name="application-name" content="${escapeHtml(cfg.siteName)}" />`,
-    )
+
+    // 默认 description 仅在未显式关闭 replaceDescription（且 replaceTitle 未置否）时注入，
+    // 避免覆盖详情页已渲染好的番剧专属简介 meta description。
+    const shouldReplaceDesc = options.replaceDescription ?? options.replaceTitle ?? true
+    if (shouldReplaceDesc) {
+      const dynamicDesc = formatDefaultDescription(cfg.siteName, cfg.siteTagline)
+      result = result.replace(
+        /<meta\s+name=["']description["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta name="description" content="${escapeHtml(dynamicDesc)}" />`,
+      )
+      result = result.replace(
+        /<meta\s+property=["']og:description["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta property="og:description" content="${escapeHtml(dynamicDesc)}" />`,
+      )
+      result = result.replace(
+        /<meta\s+name=["']twitter:description["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
+        `<meta name="twitter:description" content="${escapeHtml(dynamicDesc)}" />`,
+      )
+    }
   }
 
   // Favicon 与多尺寸图标统一版本指纹穿透 (保持全套图标同源同版本)
@@ -379,7 +404,7 @@ export function renderSuccessPage(
   const siteName = cfg.siteName || 'Animaku'
   const pageTitle = formatSubjectTitle(name, altName, siteName)
   const rawSummary = (item.summary || '').trim()
-  const metaDesc = formatSubjectDescription(name, rawSummary, 160)
+  const metaDesc = formatSubjectDescription(name, rawSummary, 160, siteName)
   const canonicalUrl = origin ? `${origin}/subject/${subjectId}` : `/subject/${subjectId}`
   const rawCover = coverOf(item, 'large') || coverOf(item)
   const coverUrl = rawCover ? toBangumiOfficialImageUrl(rawCover) : ''
