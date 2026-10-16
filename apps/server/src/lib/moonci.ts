@@ -253,6 +253,10 @@ export async function chaptersMoonci(
     }
   }
 
+  // 特殊处理说明：月之祠通常有 2-3 条线路（如 X.1, X.2, X.3），但 1-2 线路经常不可用/失效，
+  // 逆向排序（.reverse()）使得更稳定的后置线路（如 X.3 / X.2）优先作为默认首发线路。
+  roads.reverse()
+
   return {
     pluginName: rule.name,
     roads,
@@ -292,9 +296,10 @@ export async function resolveMoonci(
 
   const html = await res.text()
 
-  // Match MacCMS player_aaaa config
+  // Match MacCMS player_aaaa config (avoid premature truncation when vod_data contains nested braces)
   const playerMatch =
-    html.match(/var\s+player_aaaa\s*=\s*(\{[\s\S]*?\})\s*</) ||
+    html.match(/player_aaaa\s*=\s*(\{[\s\S]*?\})\s*<\/script>/i) ||
+    html.match(/player_aaaa\s*=\s*(\{[\s\S]*?\})\s*</i) ||
     html.match(/player_aaaa\s*=\s*(\{[\s\S]*?\})/)
 
   if (!playerMatch) {

@@ -12,6 +12,7 @@ import {
 } from '@animaku/shared'
 import { config } from '../config'
 import { getSiteConfig } from './site-config'
+import { applySiteBrandingToHtml as renderSiteBrandingToHtml } from './site-branding-html'
 import { bangumiFetch } from './http'
 import {
   BANGUMI_CACHE_TTL,
@@ -178,52 +179,12 @@ export function stripTemplateHomepageSeo(html: string): string {
  */
 export function applySiteBrandingToHtml(
   html: string,
-  options: { replaceTitle?: boolean } = { replaceTitle: true },
+  options: { replaceTitle?: boolean; replaceDescription?: boolean } = {
+    replaceTitle: true,
+    replaceDescription: true,
+  },
 ): string {
-  const cfg = getSiteConfig()
-  let result = html
-
-  if (cfg.siteName) {
-    if (options.replaceTitle) {
-      const siteTitle = cfg.siteTagline ? `${cfg.siteName} - ${cfg.siteTagline}` : cfg.siteName
-      result = result.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(siteTitle)}</title>`)
-    }
-    result = result.replace(
-      /<meta\s+property=["']og:site_name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
-      `<meta property="og:site_name" content="${escapeHtml(cfg.siteName)}" />`,
-    )
-    result = result.replace(
-      /<meta\s+name=["']application-name["']\s+content=["'][\s\S]*?["']\s*\/?>/i,
-      `<meta name="application-name" content="${escapeHtml(cfg.siteName)}" />`,
-    )
-  }
-
-  // Favicon 与多尺寸图标统一版本指纹穿透 (保持全套图标同源同版本)
-  if (cfg.iconMode === 'url' && cfg.iconUrl) {
-    const escapedUrl = escapeHtml(cfg.iconUrl)
-    result = result
-      .replace(
-        /<link\s+[^>]*rel=["']icon["'][^>]*\/?>/gi,
-        `<link rel="icon" href="${escapedUrl}" sizes="any" />`,
-      )
-      .replace(
-        /<link\s+[^>]*rel=["']apple-touch-icon["'][^>]*\/?>/gi,
-        `<link rel="apple-touch-icon" href="${escapedUrl}" />`,
-      )
-  } else if (cfg.iconUpdatedAt) {
-    const v = `?v=${cfg.iconUpdatedAt}`
-    result = result
-      .replace(/href=["']\/favicon\.ico(?:\?[^"']*)?["']/gi, `href="/favicon.ico${v}"`)
-      .replace(/href=["']\/favicon-32x32\.png(?:\?[^"']*)?["']/gi, `href="/favicon-32x32.png${v}"`)
-      .replace(/href=["']\/favicon-16x16\.png(?:\?[^"']*)?["']/gi, `href="/favicon-16x16.png${v}"`)
-      .replace(/href=["']\/apple-touch-icon\.png(?:\?[^"']*)?["']/gi, `href="/apple-touch-icon.png${v}"`)
-      .replace(/href=["']\/android-chrome-192x192\.png(?:\?[^"']*)?["']/gi, `href="/android-chrome-192x192.png${v}"`)
-      .replace(/href=["']\/site\.webmanifest(?:\?[^"']*)?["']/gi, `href="/site.webmanifest${v}"`)
-      .replace(/content=["']\/android-chrome-512x512\.png(?:\?[^"']*)?["']/gi, `content="/android-chrome-512x512.png${v}"`)
-      .replace(/href=["']\/logo\.png(?:\?[^"']*)?["']/gi, `href="/logo.png${v}"`)
-  }
-
-  return result
+  return renderSiteBrandingToHtml(html, getSiteConfig(), options)
 }
 
 /**
@@ -379,7 +340,7 @@ export function renderSuccessPage(
   const siteName = cfg.siteName || 'Animaku'
   const pageTitle = formatSubjectTitle(name, altName, siteName)
   const rawSummary = (item.summary || '').trim()
-  const metaDesc = formatSubjectDescription(name, rawSummary, 160)
+  const metaDesc = formatSubjectDescription(name, rawSummary, 160, siteName)
   const canonicalUrl = origin ? `${origin}/subject/${subjectId}` : `/subject/${subjectId}`
   const rawCover = coverOf(item, 'large') || coverOf(item)
   const coverUrl = rawCover ? toBangumiOfficialImageUrl(rawCover) : ''

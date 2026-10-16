@@ -61,6 +61,8 @@ export function MobileEpsSection({
   onPickEpisode,
   onRefreshChapters,
   episodeFallbackImage,
+  embedded = false,
+  isActive = true,
 }: {
   bangumiId?: number
   roads: MobileEpsRoad[]
@@ -87,6 +89,8 @@ export function MobileEpsSection({
   onRefreshChapters?: () => void
   /** Subject cover used only when an episode has no dedicated still. */
   episodeFallbackImage?: string
+  embedded?: boolean
+  isActive?: boolean
 }) {
   const watchedMap = useWatchedStore((s) =>
     bangumiId ? s.records[bangumiId] : undefined,
@@ -163,7 +167,7 @@ export function MobileEpsSection({
       })
     }
     return buckets
-  }, [activeRoad, rawCount, slots])
+  }, [activeRoad, rawCount, slots, episodeFallbackImage])
 
   // Auto-align selected range to playingEpisode when playing on this road
   useEffect(() => {
@@ -223,10 +227,12 @@ export function MobileEpsSection({
     const bucket = rangeBuckets.find((b) => b.rangeIndex === selectedRangeIndex) || rangeBuckets[0]
     if (!bucket) return []
     return isDescOrder ? [...bucket.items].reverse() : bucket.items
-  }, [activeRoad, isMultiRange, slots, rangeBuckets, selectedRangeIndex, isDescOrder])
+  }, [activeRoad, isMultiRange, slots, rangeBuckets, selectedRangeIndex, isDescOrder, episodeFallbackImage])
 
   // Scroll playing card into view (horizontal strip or expanded grid)
   useEffect(() => {
+    // The pod keeps hidden tabs mounted; only scroll cards when their tab is visible.
+    if (!isActive) return
     if (playingIndex < 0) return
     const root = stripRef.current
     if (!root) return
@@ -247,7 +253,7 @@ export function MobileEpsSection({
         block: 'center',
       })
     }
-  }, [listExpanded, playingIndex, visibleEpisodes])
+  }, [listExpanded, playingIndex, visibleEpisodes, isActive])
 
   // Keep active road pill in view when many lines overflow horizontally
   useEffect(() => {
@@ -271,14 +277,27 @@ export function MobileEpsSection({
       : ''
 
   return (
-    <section className="kz-watch-eps kz-watch-eps--mobile kz-watch-panel min-w-0 max-w-full overflow-hidden">
-      <div className="kz-bili-sec-head">
-        <h2 className="kz-bili-sec-title">
-          选集
-          {countLabel ? (
-            <span className="kz-bili-sec-count">{countLabel}</span>
-          ) : null}
-        </h2>
+    <section
+      className={
+        embedded
+          ? 'kz-watch-eps-embedded w-full min-w-0'
+          : 'kz-watch-eps kz-watch-eps--mobile kz-watch-panel min-w-0 max-w-full overflow-hidden'
+      }
+    >
+      <div className={clsx('kz-bili-sec-head', embedded && 'px-2.5 pt-2 pb-1 border-none')}>
+        {!embedded && (
+          <h2 className="kz-bili-sec-title">
+            选集
+            {countLabel ? (
+              <span className="kz-bili-sec-count">{countLabel}</span>
+            ) : null}
+          </h2>
+        )}
+        {embedded && (
+          <div className="text-xs text-[var(--kz-fg-muted)] font-medium">
+            {countLabel ? `播放进度 ${countLabel}` : '分集列表'}
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5 ml-auto">
           {hasSelection && onRefreshChapters && (

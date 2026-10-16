@@ -10,7 +10,10 @@
   "assets": {
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // HTML needs D1 branding before Assets responds. Static JS, images and
+    // offline media remain on their existing paths without a D1 lookup.
+    "run_worker_first": ["/", "/index.html", "/subject/*", "/play/*", "/anime", "/timeline", "/search", "/collect", "/history", "/settings", "/offline", "/account", "/admin"]
   },
   "d1_databases": [
     {
@@ -21,7 +24,7 @@
     }
   ],
   "vars": {
-    "APP_VERSION": "1.18.7",
+    "APP_VERSION": "1.19.2",
     "UPSTREAM_PROXY_URL": "https://animaku-egress-proxy.vercel.app",
     "ACCOUNT_REGISTRATION_ENABLED": "true",
     "ADMIN_USERNAME": "admin"

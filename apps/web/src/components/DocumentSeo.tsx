@@ -15,6 +15,7 @@ import {
   buildTvSeriesJsonLd,
   buildWebsiteJsonLd,
   DEFAULT_DESCRIPTION,
+  formatDefaultDescription,
   type PageSeo,
 } from '../lib/seo'
 import { useSiteConfigStore } from '../stores/site-config'
@@ -64,7 +65,12 @@ export function DocumentSeo() {
       const title = item || subject.isError
         ? formatSubjectTitle(name, alt, siteName?.trim() || undefined)
         : '加载中…'
-      const description = formatSubjectDescription(name, summary, 160)
+      const description = formatSubjectDescription(
+        name,
+        summary,
+        160,
+        siteName?.trim() || undefined,
+      )
       const cover = item ? coverOf(item, 'large') || coverOf(item) : ''
       const tagNames = item?.tags?.map((t) => t.name).filter(Boolean) || []
       const keywords = generateSubjectKeywords(name, alt, tagNames).join(', ')
@@ -114,7 +120,7 @@ export function DocumentSeo() {
         title: q ? `搜索「${q}」` : base.title,
         path: '/search',
         description: q
-          ? `Bangumi 搜索「${q}」的结果 — Animaku`
+          ? `Bangumi 搜索「${q}」的结果 — ${siteName?.trim() || 'Animaku'}`
           : base.description,
       }
     }
@@ -122,12 +128,14 @@ export function DocumentSeo() {
     const staticSeo = STATIC_ROUTE_SEO[pathname]
     if (staticSeo) {
       let routeTitle = staticSeo.title
+      let routeDescription = staticSeo.description
       if (pathname === '/') {
         const trimmedName = siteName?.trim()
         const trimmedTagline = siteTagline?.trim()
         if (trimmedName) {
           routeTitle = trimmedTagline ? `${trimmedName} - ${trimmedTagline}` : trimmedName
         }
+        routeDescription = formatDefaultDescription(trimmedName, trimmedTagline)
       }
 
       let routeJsonLd: PageSeo['jsonLd'] = undefined
@@ -148,6 +156,7 @@ export function DocumentSeo() {
       return {
         ...staticSeo,
         title: routeTitle,
+        description: routeDescription,
         path: pathname,
         jsonLd: routeJsonLd,
       }
@@ -155,7 +164,7 @@ export function DocumentSeo() {
 
     return {
       title: siteName?.trim() || 'Animaku',
-      description: DEFAULT_DESCRIPTION,
+      description: formatDefaultDescription(siteName?.trim(), siteTagline?.trim()),
       path: pathname,
       robots: 'noindex,follow',
     }

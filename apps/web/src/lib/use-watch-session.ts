@@ -284,6 +284,7 @@ export type WatchSession = {
   hudMessage: string | null
   clearHudMessage: () => void
   bgmOpedData?: Map<number, import('./bangumi-oped').BgmOpedEntry> | null
+  expectedDurationSeconds?: number
   pageUrl: string
   pluginName: string
 }
@@ -2310,6 +2311,7 @@ export function useWatchSession(bangumiId: number): WatchSession {
     hudMessage,
     clearHudMessage,
     bgmOpedData: bgmOpedQuery.data,
+    expectedDurationSeconds: episodeDurationSeconds,
     pageUrl: episode?.pageUrl || qPageUrl,
     pluginName: isSubjectTransition ? (qPlugin || '') : (selection?.plugin.name || qPlugin),
   }

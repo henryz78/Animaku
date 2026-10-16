@@ -6,7 +6,10 @@
  * Absolute OG / canonical URLs need VITE_SITE_URL (or runtime origin fallback).
  */
 
+import { formatDefaultDescription } from '@animaku/shared'
 import { useSiteConfigStore } from '../stores/site-config'
+
+export { formatDefaultDescription }
 
 export const SITE_NAME = 'Animaku 动漫'
 
@@ -193,11 +196,16 @@ export function applyPageSeo(seo: PageSeo): void {
   if (typeof document === 'undefined') return
 
   const dynamicName = useSiteConfigStore.getState().siteName?.trim()
+  const dynamicTagline = useSiteConfigStore.getState().siteTagline?.trim()
   const effectiveSiteName = dynamicName || SITE_NAME
+  const dynamicDefaultDescription = formatDefaultDescription(
+    effectiveSiteName,
+    dynamicTagline,
+  )
 
   const title = formatDocumentTitle(seo.title, effectiveSiteName)
   const description = truncateDescription(
-    seo.description?.trim() || DEFAULT_DESCRIPTION,
+    seo.description?.trim() || dynamicDefaultDescription,
   )
   const robots = seo.robots || 'index,follow'
   const isIndexable = robots.startsWith('index')
@@ -277,14 +285,19 @@ export function buildWebsiteJsonLd(siteUrl = resolveSiteUrl()): Record<string, u
   }
 
   const dynamicName = useSiteConfigStore.getState().siteName?.trim()
+  const dynamicTagline = useSiteConfigStore.getState().siteTagline?.trim()
   const effectiveSiteName = dynamicName || SITE_NAME
+  const effectiveDescription = formatDefaultDescription(
+    effectiveSiteName,
+    dynamicTagline,
+  )
 
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: effectiveSiteName,
     alternateName,
-    description: DEFAULT_DESCRIPTION,
+    description: effectiveDescription,
     ...(url ? { url } : {}),
     // Absolute SearchAction only when we know the public origin
     ...(url

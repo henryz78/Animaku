@@ -382,6 +382,7 @@ export function WatchMeta({
   /** Mobile: whole card collapsed to brief bar until expanded */
   metaOpen = true,
   onToggleMeta,
+  embedded = false,
 }: {
   item: BangumiItem | null | undefined
   title: string
@@ -399,6 +400,7 @@ export function WatchMeta({
   compact?: boolean
   metaOpen?: boolean
   onToggleMeta?: () => void
+  embedded?: boolean
 }) {
   /* Mobile collapsed — height locked to 弹幕 bar (xs + py-2) */
   if (compact && !metaOpen) {
@@ -437,7 +439,12 @@ export function WatchMeta({
   /* Mobile expanded */
   if (compact) {
     return (
-      <div className="kz-watch-meta kz-watch-panel space-y-2.5 px-3 py-2.5 text-[var(--kz-fg-muted)]">
+      <div
+        className={clsx(
+          'kz-watch-meta space-y-2.5 px-3 py-2.5 text-[var(--kz-fg-muted)]',
+          !embedded && 'kz-watch-panel',
+        )}
+      >
         <div className="flex items-start gap-2.5">
           {item && (
             <MetaCover
@@ -452,7 +459,7 @@ export function WatchMeta({
               <h1 className="min-w-0 flex-1 text-sm font-semibold leading-snug tracking-tight text-[var(--kz-fg)]">
                 {title}
               </h1>
-              {onToggleMeta ? (
+              {!embedded && onToggleMeta ? (
                 <button
                   type="button"
                   onClick={onToggleMeta}

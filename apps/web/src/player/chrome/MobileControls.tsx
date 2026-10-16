@@ -7,7 +7,11 @@ import {
   type PointerEvent,
   type SyntheticEvent,
 } from 'react'
-import type { DanmakuComment, SuperResolutionMode } from '@animaku/shared'
+import {
+  DURATION_MISMATCH_THRESHOLD_S,
+  type DanmakuComment,
+  type SuperResolutionMode,
+} from '@animaku/shared'
 import type { AspectRatioMode, PlayerControlsProps } from './types'
 import { PlayerSeekRange, PlayerTimeDisplay } from './PlaybackProgressUi'
 import {
@@ -131,6 +135,7 @@ export function MobileControls(props: PlayerControlsProps) {
     settingsMenuOpen,
     volumeMenuOpen,
     duration,
+    expectedDurationSeconds,
     comments,
     danmakuEnabled,
     danmakuSimplify,
@@ -188,12 +193,19 @@ export function MobileControls(props: PlayerControlsProps) {
   )
 
   // OP / ED chapter markers — only active when bangumi-oped is enabled and valid timestamps exist
+  // 若当前视频源时长与 Bangumi 官方单集时长绝对误差超过容差 (4s)，说明该源可能存在广告或剪辑错位，不渲染 OP/ED 高亮标尺
+  const isDurationMismatched =
+    typeof expectedDurationSeconds === 'number' &&
+    expectedDurationSeconds > 0 &&
+    Math.abs(duration - expectedDurationSeconds) > DURATION_MISMATCH_THRESHOLD_S
+
   const opMarker = useMemo(() => {
     if (
       player.preferBangumiOped === false ||
       !player.skipOp?.enabled ||
       !(player.skipOp.duration > 0) ||
-      duration <= 0
+      duration <= 0 ||
+      isDurationMismatched
     ) {
       return null
     }
@@ -201,14 +213,15 @@ export function MobileControls(props: PlayerControlsProps) {
     const left = (start / duration) * 100
     const width = (player.skipOp.duration / duration) * 100
     return { left, width }
-  }, [player.preferBangumiOped, player.skipOp, duration])
+  }, [player.preferBangumiOped, player.skipOp, duration, isDurationMismatched])
 
   const edMarker = useMemo(() => {
     if (
       player.preferBangumiOped === false ||
       !player.skipEd?.enabled ||
       !(player.skipEd.duration > 0) ||
-      duration <= 0
+      duration <= 0 ||
+      isDurationMismatched
     ) {
       return null
     }
@@ -220,7 +233,7 @@ export function MobileControls(props: PlayerControlsProps) {
     const left = (start / duration) * 100
     const width = (dur / duration) * 100
     return { left, width }
-  }, [player.preferBangumiOped, player.skipEd, duration])
+  }, [player.preferBangumiOped, player.skipEd, duration, isDurationMismatched])
 
   const pinBar =
     showBar ||

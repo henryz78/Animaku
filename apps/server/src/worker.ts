@@ -22,6 +22,8 @@ import {
   mapBangumiPersonDetail,
 } from './lib/bangumi-metadata'
 import { enrichBangumiEpisodesWithTmdb } from './lib/tmdb-episodes'
+import { applySiteBrandingToHtml } from './lib/site-branding-html'
+import type { SiteConfig } from './lib/site-config'
 import {
   clearedSessionCookie,
   createSession,
@@ -172,7 +174,7 @@ function getPlayback(env: WorkerBindings) {
 async function upstreamJson(
   url: string,
   init: RequestInit = {},
-  userAgent = 'Animaku/1.18.7',
+  userAgent = 'Animaku/1.19.2',
 ): Promise<{ response: Response; data: unknown }> {
   const headers = new Headers(init.headers)
   headers.set('Accept', headers.get('Accept') || 'application/json')
@@ -223,7 +225,7 @@ app.get('/api/health', (c) =>
   c.json({
     ok: true,
     runtime: 'cloudflare-worker',
-    version: c.env.APP_VERSION || '1.18.7',
+    version: c.env.APP_VERSION || '1.19.2',
     // Keep the official health fields for clients that use the original API.
     danmakuConfigured: true,
     danmakuUsingFallback: !(c.env.DANDAN_APP_ID?.trim() && c.env.DANDAN_APP_SECRET?.trim()),
@@ -252,7 +254,7 @@ function bangumiNextApi(c: { env: WorkerBindings }) {
 }
 
 function bangumiUserAgent(c: { env: WorkerBindings }) {
-  return c.env.BANGUMI_USER_AGENT || 'uerax/Animaku/1.18.7 (https://github.com/henryz78/Animaku)'
+  return c.env.BANGUMI_USER_AGENT || 'uerax/Animaku/1.19.2 (https://github.com/henryz78/Animaku)'
 }
 
 function subjectItem(raw: unknown): BangumiItem | unknown {
@@ -1730,14 +1732,45 @@ app.get('/play/:id', (c) => {
 
 type AssetContext = { req: { raw: Request; url: string } }
 
+async function brandHtmlResponse(response: Response, env: WorkerBindings): Promise<Response> {
+  if (!response.ok || !response.headers.get('Content-Type')?.includes('text/html')) return response
+
+  let config: SiteConfig = defaultSiteConfig
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare('SELECT value FROM site_config WHERE key = ?')
+        .bind('public').first<{ value: string }>()
+      const value = row?.value ? JSON.parse(row.value) as Record<string, unknown> : {}
+      config = {
+        siteName: typeof value.siteName === 'string' ? value.siteName : '',
+        siteTagline: typeof value.siteTagline === 'string' ? value.siteTagline : '',
+        iconMode: value.iconMode === 'url' ? 'url' : 'default',
+        iconUrl: typeof value.iconUrl === 'string' ? value.iconUrl : '',
+      }
+    } catch {
+      // A missing/unavailable D1 configuration must not prevent the app shell loading.
+    }
+  }
+
+  const html = applySiteBrandingToHtml(await response.text(), config)
+  const headers = new Headers(response.headers)
+  // Assets' validators describe the original file, not this D1-configured HTML.
+  headers.delete('Content-Length')
+  headers.delete('Content-Encoding')
+  headers.delete('ETag')
+  headers.delete('Last-Modified')
+  headers.set('Cache-Control', 'no-cache')
+  return new Response(html, { status: response.status, headers })
+}
+
 async function serveAssets(c: AssetContext, env: WorkerBindings): Promise<Response> {
   if (!env.ASSETS) return new Response('Cloudflare Assets binding is missing', { status: 503 })
   const direct = await env.ASSETS.fetch(c.req.raw)
-  if (direct.status !== 404) return direct
+  if (direct.status !== 404) return brandHtmlResponse(direct, env)
   const url = new URL(c.req.url)
   if (url.pathname.includes('.')) return direct
   url.pathname = '/index.html'
-  return env.ASSETS.fetch(new Request(url, c.req.raw))
+  return brandHtmlResponse(await env.ASSETS.fetch(new Request(url, c.req.raw)), env)
 }
 
 app.all('*', (c) => serveAssets(c, c.env))

@@ -11,9 +11,11 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import type { SkipSegment } from '@animaku/shared'
+import { DURATION_MISMATCH_THRESHOLD_S, type SkipSegment } from '@animaku/shared'
 import { bangumiApi } from './bangumi'
 import type { EpisodeMark } from './custom-oped-store'
+
+export { DURATION_MISMATCH_THRESHOLD_S }
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -38,13 +40,6 @@ const BANGUMI_OPED_BASE =
 
 const BANGUMI_OPED_STALE_MS = 30 * 60_000 // 30 min — data rarely changes
 
-/**
- * Max allowed overshoot (seconds) between bangumi-oped timestamps
- * and the episode's actual duration from Bangumi metadata.
- * OP/ED timestamps that end past `duration_seconds + DURATION_MISMATCH_THRESHOLD_S`
- * are considered stale/mismatched and silently ignored.
- */
-export const DURATION_MISMATCH_THRESHOLD_S = 4
 
 // ── Parsing ────────────────────────────────────────────────────────────────
 

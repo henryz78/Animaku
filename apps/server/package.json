@@ -1,6 +1,6 @@
 {
   "name": "@animaku/server",
-  "version": "1.18.7",
+  "version": "1.19.2",
   "private": true,
   "type": "module",
   "scripts": {

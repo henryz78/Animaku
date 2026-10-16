@@ -52,16 +52,26 @@ node scripts/probe-source.mjs https://www.cycani.org 鬼灭之刃
 1. **搜索链路**：接口 URL、Method、Headers、Body 与返回格式，是否存在公开 Key 或签名参数；
 2. **详情与分集链路**：REST API / RPC / SSR RSC Payload，分集多线路结构（`Road[]`）；
 3. **播放解析链路**：获取视频直链的触发方式（`resolve-play-url` / `issue-web-playback`）、鉴权凭证类型（JIT Nonce / Bearer JWT / 临时签名）；
-4. **媒体流可播性与防盗链探查**：`curl.exe -L -I "VIDEO_URL"` 检查 `HTTP 206 Partial Content` 与 `Accept-Ranges: bytes`。
+4. **媒体流浏览器直连与防盗链探查（最高死刑门槛）**：
+   * **核心铁律**：`requiresProxy` 机制已被全面废除，**Animaku 现已仅允许 100% 浏览器纯直连（Zero Proxy Streaming）**。
+   * **必做测试**：使用 `curl` 模拟浏览器跨域与空 Referer 发起媒体流（m3u8/ts/key/mp4）探查：
+     ```bash
+     # 1. 模拟浏览器跨域带本站 Origin
+     curl.exe -I -H "Origin: http://127.0.0.1:5173" "VIDEO_URL"
+     # 2. 模拟 no-referrer 空标头
+     curl.exe -I -H "Referer: " "VIDEO_URL"
+     ```
+   * **阻断判定**：若上述请求返回 `HTTP 403 Forbidden` / `No permission`（即源站 CDN 强校验其自身域名的白名单 Referer 且拒绝空 Referer），**必须立即放弃接入**。因为 W3C 规范将 `Referer` 与 `Origin` 设为受限标头（Forbidden Header Names），浏览器前端 JS 绝对无法伪造跨域 Referer，无法在 Web 端直连起播。
 
-#### 🚨 前置快速死刑判定：高防 WAF / Cloudflare 拦截识别
+#### 🚨 前置快速死刑判定：高防 WAF / Cloudflare 拦截与防盗链直连识别
 在探查上述链路（尤其是播放页与直链解析）时，若出现以下任一特征，**无需继续逆向，直接下达“放弃接入”结论**：
+- **无法脱离特定 Referer 浏览器直连**：源站 CDN 严格校验其自身白名单 Referer，空 Referer / 跨域 Origin 返回 403（典型如青空次元 `sorani-vids.xyz`）。由于 W3C 沙箱限制前端无法改写 Referer，且 Animaku 严禁服务端代理发流，此类源**一律直接死刑**；
 - **请求中途断连 / 连接重置**：请求到一半突然不通，返回 `curl: (52) Empty reply from server`、`SSL_ERROR_SYSCALL` 或 Node.js `UND_ERR_SOCKET: other side closed`，表明命中高防 WAF / CC 防火墙白名单或频控规则；
 - **强制防火墙 Cookie / 动态跳转**：首次请求返回 302 附带 `cckey=...` 验证跳转，强制写入防护 Cookie（如 `_ok9_` 等），且深入调用时校验真实浏览器 TLS 指纹；
 - **Cloudflare 盾 / 人机验证**：页面返回 403 / 503 且包含 `Just a moment...`、Turnstile 或 Cloudflare Challenge；
 - **DNS 高防反代特征**：CNAME 指向黑产防封/高防盾（如 `*.cnmnmsl.top` 等），多节点 Anycast 频繁丢包或连接超时。
 
-> **核心原则**：带有高防 WAF / Cloudflare 强防御的站点无法提供免盾稳定的公共 API，且媒体切片通常强绑定动态会话，极易因解析失败向服务端引流，违背“零自动回退代理”铁律，应**果断放弃**。
+> **核心原则**：带有高防 WAF / 强防盗链白名单的站点无法支持 Web 浏览器免代理直连，且媒体切片通常强绑定动态会话或特定域名标头，违背“100% 浏览器纯直连、零代理发流”铁律，应**果断放弃**。
 
 ---
 
@@ -243,10 +253,10 @@ const [hlsRes, fbRes] = await Promise.allSettled([
 | **BaaS / Serverless 区域路由** | 未指定机房 region，请求走全球 Edge Ingress 跨洲中继，延迟增加 7 倍（1.7s vs 0.25s）。 | 抓包官方前端查看配置 region（如 `ap-southeast-1`），在 URL 追加 `?forceFunctionRegion=...` 并在 Header 注入 `x-region`。 |
 | **流分支串行试错** | 先 `await` HLS（失败报错），再 `await` Fallback，两次串行导致解析耗时成倍放大。 | 改用 `Promise.allSettled` 并发请求 HLS 与 Fallback，取最快可用分支，将耗时压缩至单次请求最大值（~250ms）。 |
 | **无意义的 HEAD 探测** | 服务端在下发链接前使用 `HEAD` 方法探测海外 CDN 302 重定向，单次白白浪费 1~2.5 秒。 | 坚决移除服务端同步 HEAD 探测；现代浏览器内核原生支持 0ms 跟随重定向，直接将直链下发给客户端。 |
-| **防盗链与 Referer** | 联通云盘直链（`pan.wo.cn`）或部分 CDN 在携带跨域 Referer 时直接报 `400 Bad Request`。 | 在 `index.html` 配置 `<meta name="referrer" content="no-referrer" />`，在 `<video>` 配置 `referrerPolicy = 'no-referrer'`；服务端根据目标 CDN 清除跨域 Referer。 |
+| **防盗链与 Referer** | 联通云盘直链（`pan.wo.cn`）或部分 CDN 在携带跨域 Referer 时报 `400 Bad Request`，但支持 `no-referrer`。 | 在 `<video>` 配置 `referrerPolicy = 'no-referrer'` 可放行的 CDN 允许接入；但若 CDN 校验特定白名单 Referer 且空 Referer 报 403（如青空次元 `sorani-vids.xyz`），由于浏览器沙箱无法伪造跨域 Referer，**此类源坚决禁止接入**。 |
 | **Next.js RSC 串流多线路解析** | 现代 Next.js 站点分集数据嵌套在 `self.__next_f.push([1, "..."])` 中，且含有三层转义。 | 编写带括号层级计数的 `extractNextFPushes` 块提取器，先将外层字符串 `JSON.parse` 解开一层，再解析内部 `sources` JSON 提取多线路。 |
 | **选源异步竞态 (Race Condition)** | 初始后台预搜索较慢返回，强行触发 `autoPickFirst` 覆盖了用户刚刚点击选择的新源。 | 在 `searchOnePlugin` 返回时增加断言：若当前用户已聚焦另一个源（`selectionRef.current.plugin.name !== plugin.name`），**严禁自动覆盖选集**。 |
-| **媒体直连与零带宽** | 视频源默认应提供无需鉴权的直链或 CDN 直连 HLS。 | 播放器优先使用 `playUrl` 纯直连源站 CDN 播放（零服务器带宽消耗），仅在 HLS 广告清洗或必要凭据（Cookie）时走受控 Ticket 网关。 |
+| **媒体直连与零带宽（铁律）** | `requiresProxy` 代理发流机制已被彻底废除，所有新源**必须支持浏览器纯直连**。 | 播放器严格仅使用 `playUrl` 纯直连源站 CDN 播放（零服务器带宽消耗）。任何无法脱离服务端代理转发媒体流的源，**一律禁止接入**。 |
 | **严禁直连失败回退代理** | 直连播放失败时自动 fallback 到服务端代理，导致用户所有流量无声无息打满服务器带宽。 | **Zero Auto Proxy Fallback 铁律**：直连失败必须明确报错并引导用户切源，严禁客户端静默自动回退代理偷跑服务器带宽流量。 |
 | **一次性消费凭证 (Nonce Token)** | 很多现代站点（如 TvTFun）的播放 Token 带单次消费限制，全局静态缓存导致切集立即 403 崩溃。 | 采用 **JIT（按需即用 / On-Demand）** 策略，在 `resolve` 直链前毫秒级针对目标分集拉取专属新凭证并即时消费。 |
 | **前端 F12 防调试绕过** | 前端内嵌 `disable-devtool`，在浏览器中打开 F12 立即强制跳转百度，无法正常抓包。 | 直接使用 `scripts/probe-source.ts` 或 Node.js 抓取 SSR HTML / RSC Payload 逆向提取真实 RESTful JSON 接口。 |
@@ -264,9 +274,9 @@ const [hlsRes, fbRes] = await Promise.allSettled([
 1. **高防 WAF / CC 动态防御与握手断连**：
    - 典型表现：首页或搜索接口尚可响应，但只要进入播放页或并发请求，即遭遇 `Empty reply from server`、`UND_ERR_SOCKET`、`SSL_ERROR_SYSCALL`；
    - 本质原因：配置了 OpenResty CC / Cloudflare / 宝塔网站防火墙等强频控与设备指纹拦截机制，外部爬虫与无头请求无法维持长效稳定。
-2. **强会话凭证与无法脱离代理直连播放**：
-   - 典型表现：视频 m3u8 切片或 mp4 直链强依赖 Cookie、特定 Referer 或短期动态 Token，在前端原生 `<video>` 标签中无法跨域直连播放；
-   - 违规后果：若通过服务端代理发流，彻底违背项目 **Zero Auto Proxy Fallback（严禁偷跑服务端带宽）** 铁律。
+2. **强会话凭证与无法脱离代理直连播放（严格死刑）**：
+   - 典型表现：视频 m3u8 切片或 mp4 直链强依赖 Cookie、特定白名单 Referer（如 `sorani.net` 且空 Referer 报 403）或短期动态 Token，在前端原生 `<video>` 标签中无法跨域直连播放；
+   - 核心铁律：`requiresProxy` 发流机制已彻底废除，Animaku 仅允许 100% 浏览器纯直连播放；若通过服务端代理发流，彻底违背项目 **Zero Auto Proxy Fallback（严禁偷跑服务端带宽）** 铁律。凡是无法支持浏览器端免代理直连播放的源，**一律直接死刑**。
 3. **交互式人机验证（CAPTCHA / 5秒盾）**：
    - 典型表现：主业务链路频繁阻断并展示 Cloudflare Turnstile、Geetest 极验滑块、文字点选等验证码；
    - 自动化瓶颈：无交互的规则引擎和服务端后台无法自动化通过此类人机校验。
