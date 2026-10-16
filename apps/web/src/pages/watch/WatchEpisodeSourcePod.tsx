@@ -40,8 +40,10 @@ export function WatchEpisodeSourcePod({
 }: WatchEpisodeSourcePodProps) {
   // Episode badge label (e.g. "1/12" or "全12话")
   const epBadge =
-    typeof playingEpisode === 'number' && playingEpisode > 0
-      ? totalEpisodes && totalEpisodes > 0
+    typeof playingEpisode === 'number' && playingEpisode >= 0
+      // Canonical sequel numbering (e.g. episode 67 in an 11-episode season)
+      // and prologues are labels, not positions within the current season.
+      ? totalEpisodes && totalEpisodes > 0 && playingEpisode > 0 && playingEpisode <= totalEpisodes
         ? `${playingEpisode}/${totalEpisodes}`
         : `第${playingEpisode}集`
       : totalEpisodes && totalEpisodes > 0

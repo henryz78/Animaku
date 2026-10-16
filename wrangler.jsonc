@@ -11,9 +11,9 @@
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // HTML needs D1 branding before Assets responds. Static JS, images and
-    // offline media remain on their existing paths without a D1 lookup.
-    "run_worker_first": ["/", "/index.html", "/subject/*", "/play/*", "/anime", "/timeline", "/search", "/collect", "/history", "/settings", "/offline", "/account", "/admin"]
+    // Keep APIs ahead of SPA fallback, and brand HTML using D1 before Assets
+    // responds. Static JS/images do not need Worker execution or a D1 lookup.
+    "run_worker_first": ["/api/*", "/", "/index.html", "/subject/*", "/play/*", "/anime", "/timeline", "/search", "/collect", "/history", "/settings", "/offline", "/account", "/admin"]
   },
   "d1_databases": [
     {

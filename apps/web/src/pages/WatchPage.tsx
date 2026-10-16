@@ -198,7 +198,8 @@ export function WatchPage() {
     Math.max(0, (w.selection?.roads.length || 1) - 1),
   )
   const activeRoad = w.selection?.roads[activeRoadIndex]
-  const epCount = activeRoad?.identifier?.length ?? 0
+  // Source lists can include SPs; show the same aligned main-episode count as the cards.
+  const epCount = w.slots.length || (activeRoad?.identifier?.length ?? 0)
 
   // Chapters ready (auto-pick or resume): fold 视频源; 选集默认网格; mobile scroll
   useEffect(() => {
