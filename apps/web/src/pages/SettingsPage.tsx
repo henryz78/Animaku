@@ -1475,6 +1475,70 @@ export function SettingsPage() {
   )
 }
 
+function AccountRegistrationControl() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [reload, setReload] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setEnabled(null)
+    setMessage('')
+    void api<{ registrationEnabled: boolean }>('/api/admin/accounts/settings', { signal: controller.signal })
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setEnabled(result.registrationEnabled)
+          useAccountStore.setState({ registrationEnabled: result.registrationEnabled })
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setMessage(`加载失败：${error instanceof Error ? error.message : String(error)}`)
+      })
+    return () => controller.abort()
+  }, [reload])
+
+  const save = async (registrationEnabled: boolean) => {
+    if (saving || enabled === null) return
+    setSaving(true)
+    setMessage('')
+    try {
+      const result = await api<{ registrationEnabled: boolean }>('/api/admin/accounts/settings', {
+        method: 'POST',
+        body: JSON.stringify({ registrationEnabled }),
+      })
+      setEnabled(result.registrationEnabled)
+      useAccountStore.setState({ registrationEnabled: result.registrationEnabled })
+      setMessage(result.registrationEnabled ? '已开放注册' : '已关闭注册，已有账号仍可登录')
+    } catch (error) {
+      setMessage(`保存失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--kz-border)]/60 bg-[var(--kz-bg-soft)]/50 p-3">
+      <label className="flex items-center justify-between gap-3 text-sm text-[var(--kz-fg)]">
+        <span>允许新用户注册</span>
+        <input
+          type="checkbox"
+          checked={enabled === true}
+          disabled={enabled === null || saving}
+          onChange={(event) => void save(event.target.checked)}
+          aria-describedby="registration-setting-hint"
+          className="h-4 w-4 shrink-0 accent-[var(--kz-accent)] disabled:cursor-wait disabled:opacity-50"
+        />
+      </label>
+      <p id="registration-setting-hint" className="mt-1.5 text-[11px] leading-relaxed text-[var(--kz-fg-dim)]">修改后自动保存。关闭后，已有账号仍可正常登录。</p>
+      <p className="mt-1.5 text-xs text-[var(--kz-fg-muted)]" role="status">
+        {saving ? '正在保存…' : message || (enabled === null ? '正在读取注册设置…' : enabled ? '当前已开放注册' : '当前已关闭注册')}
+      </p>
+      {enabled === null && message && <button type="button" onClick={() => setReload((value) => value + 1)} className="mt-2 text-xs text-[var(--kz-accent)] hover:underline">重新加载</button>}
+    </div>
+  )
+}
+
 function AdminPanelSection({
   isOpen,
   onToggle,
@@ -1945,6 +2009,7 @@ function AdminPanelSection({
                 </button>
               </div>
               <p className="text-[11px] leading-relaxed text-[var(--kz-fg-dim)]">可查看注册账号、暂停或恢复登录。删除会同时清除该账号的云端数据。</p>
+              <AccountRegistrationControl />
               {accountUsers.length === 0 ? (
                 <p className="rounded-xl bg-[var(--kz-bg-soft)] p-3 text-xs text-[var(--kz-fg-dim)]">暂无账号</p>
               ) : (

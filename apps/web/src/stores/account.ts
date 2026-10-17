@@ -12,6 +12,7 @@ export type AccountUser = {
 type AccountState = {
   user: AccountUser | null
   available: boolean
+  registrationEnabled: boolean
   loading: boolean
   initialized: boolean
   init: () => Promise<void>
@@ -26,6 +27,7 @@ let initPromise: Promise<void> | null = null
 export const useAccountStore = create<AccountState>((set) => ({
   user: null,
   available: true,
+  registrationEnabled: false,
   loading: false,
   initialized: false,
 
@@ -34,16 +36,16 @@ export const useAccountStore = create<AccountState>((set) => ({
     initPromise = (async () => {
       set({ loading: true })
       try {
-        const result = await api<{ ok: boolean; user: AccountUser | null; available?: boolean }>('/api/account/me')
+        const result = await api<{ ok: boolean; user: AccountUser | null; available?: boolean; registrationEnabled?: boolean }>('/api/account/me')
         rememberOfflineProfile(result.user || null)
-        set({ user: result.user || null, available: result.available !== false, initialized: true })
+        set({ user: result.user || null, available: result.available !== false, registrationEnabled: result.registrationEnabled === true, initialized: true })
       } catch (error) {
         // The account is now the entry point for the application. Keep the
         // failure visible on the login screen instead of silently falling
         // back to an anonymous session.
         const unauthenticated = error instanceof ApiError && (error.status === 401 || error.status === 403)
         if (unauthenticated) rememberOfflineProfile(null)
-        set({ user: null, available: unauthenticated, initialized: true })
+        set({ user: null, available: unauthenticated, registrationEnabled: false, initialized: true })
       } finally {
         set({ loading: false })
       }
@@ -69,6 +71,13 @@ export const useAccountStore = create<AccountState>((set) => ({
     const result = await api<{ user: AccountUser }>('/api/account/register', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+    }).catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 403 &&
+        error.body && typeof error.body === 'object' && 'error' in error.body &&
+        error.body.error === 'registration_disabled') {
+        set({ registrationEnabled: false })
+      }
+      throw error
     })
     set({ user: result.user, available: true, initialized: true })
     rememberOfflineProfile(result.user)

@@ -29,12 +29,14 @@ export function AccountPage() {
   const returnTo = safeReturnTo(params.get('redirect'))
   const user = useAccountStore((state) => state.user)
   const available = useAccountStore((state) => state.available)
+  const registrationEnabled = useAccountStore((state) => state.registrationEnabled)
   const initialized = useAccountStore((state) => state.initialized)
   const init = useAccountStore((state) => state.init)
   const login = useAccountStore((state) => state.login)
   const register = useAccountStore((state) => state.register)
   const logout = useAccountStore((state) => state.logout)
   const [mode, setMode] = useState<Mode>('login')
+  const activeMode = registrationEnabled ? mode : 'login'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -67,10 +69,10 @@ export function AccountPage() {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setMessage('')
-    if (mode === 'register' && password !== confirmPassword) { setMessage('两次输入的密码不一致'); return }
+    if (activeMode === 'register' && password !== confirmPassword) { setMessage('两次输入的密码不一致'); return }
     setBusy(true)
     try {
-      if (mode === 'register') await register(username.trim(), password)
+      if (activeMode === 'register') await register(username.trim(), password)
       else await login(username.trim(), password)
       try { await syncCloudData() } catch { /* 登录成功后仍可从账号页手动同步 */ }
       navigate(returnTo, { replace: true })
@@ -114,16 +116,20 @@ export function AccountPage() {
         <section className="mx-auto w-full max-w-md">
           <div className="mb-5 flex items-center gap-3 lg:hidden"><img src="/logo.png" alt="" width={44} height={44} className="h-11 w-11 rounded-2xl object-cover ring-1 ring-[var(--kz-border)]" /><div><p className="font-bold">{branding.productName}</p><p className="text-xs text-[var(--kz-fg-muted)]">{branding.tagline}</p></div></div>
           <div className="rounded-[2rem] border border-[var(--kz-border)] bg-[var(--kz-bg-elevated)] p-5 shadow-2xl sm:p-8">
-            <div className="mb-7"><p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--kz-accent)]">欢迎回来</p><h2 className="mt-2 text-3xl font-black tracking-tight">{mode === 'login' ? '登录账号' : '创建账号'}</h2><p className="mt-2 text-sm leading-6 text-[var(--kz-fg-muted)]">{mode === 'login' ? '登录后才能进入主页和播放内容。' : '创建账号后即可开始使用网站。'}</p></div>
+            <div className="mb-7"><p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--kz-accent)]">欢迎回来</p><h2 className="mt-2 text-3xl font-black tracking-tight">{activeMode === 'login' ? '登录账号' : '创建账号'}</h2><p className="mt-2 text-sm leading-6 text-[var(--kz-fg-muted)]">{activeMode === 'login' ? '登录后才能进入主页和播放内容。' : '创建账号后即可开始使用网站。'}</p></div>
             {!available && <div className="mb-5 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3.5 text-sm leading-6 text-amber-700 dark:text-amber-200" role="alert">账号服务暂时不可用，请检查 Cloudflare D1 绑定和账号迁移是否已完成。</div>}
             <form className="space-y-4" onSubmit={onSubmit}>
               <label className="block"><span className="mb-1.5 block text-sm font-medium text-[var(--kz-fg)]">用户名</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required minLength={3} maxLength={32} className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-3 text-sm text-[var(--kz-fg)] outline-none transition placeholder:text-[var(--kz-fg-dim)] focus:border-[var(--kz-accent)] focus:ring-2 focus:ring-[var(--kz-accent-ring)]" placeholder="3 到 32 个字符" /></label>
-              <label className="block"><span className="mb-1.5 block text-sm font-medium text-[var(--kz-fg)]">密码</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-3 text-sm text-[var(--kz-fg)] outline-none transition placeholder:text-[var(--kz-fg-dim)] focus:border-[var(--kz-accent)] focus:ring-2 focus:ring-[var(--kz-accent-ring)]" placeholder="至少 8 个字符" /></label>
-              {mode === 'register' && <label className="block"><span className="mb-1.5 block text-sm font-medium text-[var(--kz-fg)]">确认密码</span><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" required minLength={8} maxLength={128} className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-3 text-sm text-[var(--kz-fg)] outline-none transition placeholder:text-[var(--kz-fg-dim)] focus:border-[var(--kz-accent)] focus:ring-2 focus:ring-[var(--kz-accent-ring)]" placeholder="再次输入密码" /></label>}
+              <label className="block"><span className="mb-1.5 block text-sm font-medium text-[var(--kz-fg)]">密码</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={activeMode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-3 text-sm text-[var(--kz-fg)] outline-none transition placeholder:text-[var(--kz-fg-dim)] focus:border-[var(--kz-accent)] focus:ring-2 focus:ring-[var(--kz-accent-ring)]" placeholder="至少 8 个字符" /></label>
+              {activeMode === 'register' && <label className="block"><span className="mb-1.5 block text-sm font-medium text-[var(--kz-fg)]">确认密码</span><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" required minLength={8} maxLength={128} className="w-full rounded-xl border border-[var(--kz-border)] bg-[var(--kz-bg-soft)] px-3.5 py-3 text-sm text-[var(--kz-fg)] outline-none transition placeholder:text-[var(--kz-fg-dim)] focus:border-[var(--kz-accent)] focus:ring-2 focus:ring-[var(--kz-accent-ring)]" placeholder="再次输入密码" /></label>}
               {message && <p className="text-sm text-[var(--kz-danger)]" role="alert">{message}</p>}
-              <button type="submit" disabled={busy || !available} className="mt-2 flex w-full items-center justify-center rounded-xl bg-[var(--kz-accent)] px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-[var(--kz-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50">{busy ? '处理中…' : mode === 'login' ? '登录并进入主页' : '注册并登录'}</button>
+              <button type="submit" disabled={busy || !available} className="mt-2 flex w-full items-center justify-center rounded-xl bg-[var(--kz-accent)] px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-[var(--kz-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50">{busy ? '处理中…' : activeMode === 'login' ? '登录并进入主页' : '注册并登录'}</button>
             </form>
-            <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setMessage('') }} className="mt-5 w-full text-center text-sm font-medium text-[var(--kz-accent)] hover:text-[var(--kz-accent-hover)] hover:underline">{mode === 'login' ? '还没有账号？立即注册' : '已有账号？返回登录'}</button>
+            {registrationEnabled ? (
+              <button type="button" onClick={() => { setMode(activeMode === 'login' ? 'register' : 'login'); setMessage('') }} className="mt-5 w-full text-center text-sm font-medium text-[var(--kz-accent)] hover:text-[var(--kz-accent-hover)] hover:underline">{activeMode === 'login' ? '还没有账号？立即注册' : '已有账号？返回登录'}</button>
+            ) : available ? (
+              <p className="mt-5 text-center text-sm text-[var(--kz-fg-muted)]">当前未开放注册，请联系管理员。</p>
+            ) : null}
             <div className="mt-6 grid grid-cols-3 gap-2 border-t border-[var(--kz-border)] pt-5 text-center text-[11px] text-[var(--kz-fg-dim)]"><span>安全会话</span><span>云端保存</span><span>跨设备使用</span></div>
           </div>
           <p className="mt-5 text-center text-xs text-[var(--kz-fg-dim)]">{branding.productName} · 登录后开始使用</p>

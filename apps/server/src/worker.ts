@@ -1421,23 +1421,43 @@ function configuredAdminPassword(env: WorkerBindings): string {
   return typeof env.ADMIN_PASSWORD === 'string' ? env.ADMIN_PASSWORD : ''
 }
 
-app.get('/api/account/me', async (c) => {
-  const db = accountDb(c)
-  if (!db) return c.json({ ok: true, user: null, available: false })
+async function readRegistrationEnabled(env: WorkerBindings): Promise<boolean> {
+  if (!env.DB) return false
+  const row = await env.DB.prepare('SELECT value FROM site_config WHERE key = ?')
+    .bind('account_registration').first<{ value: string }>()
+  // The environment variable is only a legacy default until an administrator
+  // saves the switch. Keep this separate from branding and icon resets.
+  if (!row) return isRegistrationEnabled(env.ACCOUNT_REGISTRATION_ENABLED)
   try {
-    const user = await findSessionUser(db, readSessionToken(c.req.header('Cookie')), c.env.ADMIN_USERNAME)
-    return c.json({ ok: true, user, available: true })
+    const value: unknown = JSON.parse(row.value)
+    return Boolean(value && typeof value === 'object' && 'registrationEnabled' in value && value.registrationEnabled === true)
+  } catch {
+    // Invalid stored settings must never accidentally reopen registration.
+    return false
+  }
+}
+
+app.get('/api/account/me', async (c) => {
+  c.header('Cache-Control', 'no-store')
+  const db = accountDb(c)
+  if (!db) return c.json({ ok: true, user: null, available: false, registrationEnabled: false })
+  try {
+    const [user, registrationEnabled] = await Promise.all([
+      findSessionUser(db, readSessionToken(c.req.header('Cookie')), c.env.ADMIN_USERNAME),
+      readRegistrationEnabled(c.env),
+    ])
+    return c.json({ ok: true, user, available: true, registrationEnabled })
   } catch (error) {
     return c.json({ ok: false, error: 'account_unavailable', message: error instanceof Error ? error.message : String(error) }, 503)
   }
 })
 
 app.post('/api/account/register', async (c) => {
-  if (!isRegistrationEnabled(c.env.ACCOUNT_REGISTRATION_ENABLED)) {
-    return c.json({ ok: false, error: 'registration_disabled', message: '当前未开放注册' }, 403)
-  }
   const db = accountDb(c)
   if (!db) return c.json({ ok: false, error: 'database_unavailable', message: '账号数据库暂不可用' }, 503)
+  if (!(await readRegistrationEnabled(c.env))) {
+    return c.json({ ok: false, error: 'registration_disabled', message: '当前未开放注册' }, 403)
+  }
   const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
   const username = normalizeUsername(body.username)
   const password = typeof body.password === 'string' ? body.password : ''
@@ -1650,6 +1670,24 @@ async function isAdmin(c: { env: WorkerBindings; req: { header: (name: string) =
 }
 
 app.post('/api/admin/verify', async (c) => (await isAdmin(c)) ? c.json({ ok: true }) : c.json({ ok: false, error: 'unauthorized' }, 401))
+app.get('/api/admin/accounts/settings', async (c) => {
+  c.header('Cache-Control', 'no-store')
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
+  return c.json({ ok: true, registrationEnabled: await readRegistrationEnabled(c.env) })
+})
+app.post('/api/admin/accounts/settings', async (c) => {
+  if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
+  if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)
+  const body: unknown = await c.req.json().catch(() => null)
+  if (!body || typeof body !== 'object' || !('registrationEnabled' in body) || typeof body.registrationEnabled !== 'boolean') {
+    return c.json({ ok: false, error: 'invalid_settings', message: '注册开关必须为 true 或 false' }, 400)
+  }
+  const { registrationEnabled } = body
+  await c.env.DB.prepare('INSERT INTO site_config (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
+    .bind('account_registration', JSON.stringify({ registrationEnabled }), Date.now()).run()
+  return c.json({ ok: true, registrationEnabled })
+})
 app.get('/api/admin/accounts', async (c) => {
   if (!(await isAdmin(c))) return c.json({ ok: false, error: 'unauthorized' }, 401)
   if (!c.env.DB) return c.json({ ok: false, error: 'database_unavailable' }, 503)

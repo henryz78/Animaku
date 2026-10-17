@@ -54,7 +54,9 @@ pnpm exec wrangler d1 execute YOUR_DATABASE_NAME --remote --file apps/server/mig
 
 当前 Cloudflare 版本要求先登录才能进入主页。管理员也使用普通账号登录：把账号名写入 `ADMIN_USERNAME`，把密码写入 Worker Secret `ADMIN_PASSWORD`，服务端会在首次登录时自动创建/修复管理员账号并建立正常会话，设置页不再要求重复输入 `ADMIN_SECRET`。数据库只保存该密码的哈希。`ADMIN_SECRET` 仅作为旧脚本和自托管集成的兼容鉴权入口保留。
 
-在网页端把 `ADMIN_USERNAME` 设为你希望使用的账号名，并将 `ADMIN_PASSWORD` 设为密钥。然后直接在登录页用该账号和密码登录，不需要先注册。`ACCOUNT_REGISTRATION_ENABLED` 控制是否允许其他人注册，也由你在网页端设置。现有主站的这些设置会继续保留。
+在网页端把 `ADMIN_USERNAME` 设为你希望使用的账号名，并将 `ADMIN_PASSWORD` 设为密钥。然后直接在登录页用该账号和密码登录，不需要先注册。
+
+是否允许新用户注册在网站的 **设置 → 站点运维与管理 → 云端账号管理 → 允许新用户注册** 中控制，切换后自动保存到 D1。关闭注册不影响已有账号登录，登录页会隐藏注册入口。新部署无需设置 `ACCOUNT_REGISTRATION_ENABLED`，默认关闭注册；旧部署的该变量只作为尚未保存面板设置时的默认值，面板保存后始终以 D1 中的设置为准。注册开关与站名、图标独立保存，不会被重置图标或站点外观清除，也不需要新增数据库迁移。
 
 当 Cloudflare 出口被 B 站、Animoe 或 TVTFun 拒绝时，可以启用一个只允许固定域名、只转发小响应的外部出口。在网页端设置普通变量 `UPSTREAM_PROXY_URL` 为代理根地址，并设置密钥 `UPSTREAM_PROXY_TOKEN` 为代理中的同一个 `PROXY_TOKEN`。现有代理地址为 `https://animaku-egress-proxy.vercel.app`，已有配置会继续保留。没有代理密钥时，Worker 会继续使用原来的直连路径；配置后只会在固定上游返回 403/412 时才尝试备用出口。
 
