@@ -12,12 +12,14 @@
     <img src="https://img.shields.io/badge/Vite-6-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 6" />
     <img src="https://img.shields.io/badge/Hono-API-E36002?style=for-the-badge&logo=hono&logoColor=white" alt="Hono API" />
     <img src="https://img.shields.io/badge/WebGPU-Anime4K-9cf?style=for-the-badge&logo=webgpu&logoColor=white" alt="WebGPU Anime4K" />
-    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Ready" />
+    <img src="https://img.shields.io/badge/Cloudflare_Workers-Ready-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" />
   </p>
 
   <p>现代化自托管二次元番剧流媒体客户端。开箱内置优质 1080P 直链源，集成 Bangumi 放送表、弹幕聚合、WebGPU 实时超分与智能跳过 OP/ED。专为追番设计 (～￣▽￣)～</p>
 
 </div>
+
+本仓库是 [uerax/Animaku](https://github.com/uerax/Animaku) 的二次开发版本，主要部署方式为 **Cloudflare Workers + D1**，增加网站账号、云端同步、管理员用户管理、本机缓存与下载等功能，并继续跟进官方更新。
 
 ## 屏幕截图
 
@@ -47,38 +49,47 @@
 - [X]  移动端触控手势操作
 - [X]  播放历史记录
 - [X]  深色 / 浅色模式
-- [X]  Docker 一键部署
+- [X]  Cloudflare Workers + D1，GitHub 推送自动部署
+- [X]  网站账号登录、跨设备观看记录与设置同步
+- [X]  管理员用户管理与注册开关
+- [X]  本机缓存、下载导出与个人数据备份
+- [X]  角色 / 制作人员详情弹窗、评价及 TMDB 辅助单集图片
 - [ ]  还有更多 (/・ω・＼)
 
 ## 部署与运行
 
-推荐使用 **Docker Compose** 一键部署：
+按 [Cloudflare Worker 部署指南](docs/cloudflare-worker.md) 从零创建 D1、初始化数据表、创建 Worker 并连接 GitHub。主站同时提供网页和 API，不需要额外的 Node 服务。
 
-```bash
-# 1. 克隆代码仓库
-git clone https://github.com/uerax/Animaku.git animaku
-cd animaku
+| GitHub 仓库 | 生产分支 | 根目录 | 构建命令 | 部署命令 |
+| --- | --- | --- | --- | --- |
+| `henryz78/Animaku` | `master` | `/` | `pnpm build:cloudflare` | `pnpm deploy:cloudflare` |
 
-# 2. 准备配置文件
-cp .env.example .env
+在 Cloudflare 构建变量中设置 `PNPM_VERSION=9.15.0`。管理员账号、密钥和 `DB` 数据库绑定在 Worker 网页端设置；代码仅保留入口与静态资源等技术配置。
 
-# 3. 启动容器
-docker compose up -d
-```
+首次部署默认关闭注册。配置 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 后直接登录管理员，在 **设置 → 站点运维与管理 → 云端账号管理** 中开启注册，无需设置 `ACCOUNT_REGISTRATION_ENABLED`。
 
-启动后使用浏览器访问 `http://localhost:8787` 即可。
+部署与数据说明：
+
+- [Cloudflare 从零创建、变量、自动部署及限制](docs/cloudflare-worker.md)
+- [本机缓存、下载与浏览器兼容限制](docs/offline-cache.md)
+- [可选的外部备用出口代理](animaku-egress-proxy/README.md)
+- [官方版本合并记录](docs/upstream-sync.md)
+
+仓库保留上游 Node/Docker 入口，但账号和云同步接口目前由 Worker 实现，Node 入口不能替代完整的账号部署。`docker-compose.yml` 默认拉取官方镜像，使用它不会发布本分支的修改。
 
 <details>
 <summary>本地开发与调试</summary>
 
 ```bash
-# 环境要求：Node.js ≥ 20，推荐 pnpm
+# 环境要求：Node.js ≥ 22，推荐使用 .node-version 指定的版本；pnpm 9.15.0
+git clone https://github.com/henryz78/Animaku.git animaku
+cd animaku
 pnpm install
 cp .env.example .env
 pnpm dev
 ```
 
-浏览器打开 `http://localhost:5173` 进行调试。
+浏览器打开 `http://localhost:5173` 调试前端与 Node API；此开发入口尚未提供 Worker 的账号接口，不能据此验证完整登录流程。Cloudflare 打包检查使用 `pnpm build:cloudflare` 和 `pnpm check:cloudflare`。
 </details>
 
 ## 快捷键与手势
@@ -89,6 +100,7 @@ pnpm dev
 | :--- | :--- |
 | `Space` / `K` | 播放 / 暂停 |
 | `←` / `→` | 快退 5 秒 / 快进 5 秒 |
+| 长按 `←` / `→` | 临时 2 倍速，松开恢复原速度 |
 | `↑` / `↓` | 音量调整 ±5% |
 | `F` | 系统全屏 |
 | `Shift + W` | 网页全屏 |
@@ -101,8 +113,9 @@ pnpm dev
 
 ### 移动端手势
 
-- **双击屏幕**：播放 / 暂停
-- **长按屏幕**：2.0X 极速快进
+- **双击左侧 / 右侧画面**：回退 / 快进 5 秒
+- **双击中间画面**：播放 / 暂停
+- **长按画面**：临时 2 倍速，松开恢复原速度
 - **横向滑动**：快速寻轨快进 / 快退
 
 ## Q&A
@@ -130,7 +143,9 @@ A: 默认使用内置公共接口。如需更稳定体验，可在 [弹弹play �
 
 ## 隐私政策
 
-默认不收集任何用户数据，不内置任何商业追踪 SDK。播放历史与个人配置均仅保存在使用者浏览器本地。
+本分支使用网站账号。D1 保存账号与密码哈希、会话摘要，以及账号同步的观看记录、已看集数、搜索记录、播放设置、规则和源绑定等数据；浏览器同时保留本机数据。Bangumi 收藏由 Bangumi 维护，其登录令牌不主动参与本站云同步。
+
+视频缓存与下载文件保存在用户设备，不存入 D1；JSON 数据备份不包含视频。访客分析脚本仅在站长显式配置对应构建变量时注入。具体缓存与导出边界见 [本机缓存与下载](docs/offline-cache.md)。
 
 ## 致谢
 

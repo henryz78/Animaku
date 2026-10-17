@@ -3,11 +3,13 @@
 > 本文档面向维护者、贡献者与开发协作，汇总了系统的**核心架构设计、数据流向、关键技术选型与避坑准则**。  
 > 快速上手请参阅根目录 [README.md](../README.md)；视频源接入规范请参阅 [docs/video-source-integration.md](./video-source-integration.md)；SQLite 数据库运维与查询指南请参阅 [docs/database-maintenance.md](./database-maintenance.md)；Cloudflare CDN 与 WAF 规则指南请参阅 [docs/cloudflare-cdn-rules.md](./cloudflare-cdn-rules.md)。
 
+> 本分支的完整账号部署以 [Cloudflare Worker + D1 指南](./cloudflare-worker.md)为准。本文保留的 Node 进程、SQLite L2、定时任务与源站 CDN 说明不代表 Worker 已实现相同机制。
+
 ---
 
 ## 1. 系统定位与核心架构
 
-**Animaku** 是一套基于 **React 19 SPA + 本地轻量 Hono API + SQLite 持久化** 的现代化自托管番剧客户端。
+**Animaku** 是一套基于 **React 19 SPA + Hono API** 的番剧客户端。本分支主要使用 Cloudflare Worker 同时提供 API 与 Assets 静态资源，D1 保存账号及云同步；上游 Node + SQLite 入口继续保留，但尚未提供本分支的账号接口。
 
 ### Monorepo 代码组织
 
@@ -15,16 +17,19 @@
 animaku/
 ├── apps/
 │   ├── web/            # @animaku/web (React 19, Vite 6, Tailwind 4, TanStack Query, Zustand)
-│   └── server/         # @animaku/server (Hono, @hono/node-server, node:sqlite, cheerio)
+│   └── server/         # worker.ts: Cloudflare + D1；index.ts: Node + SQLite
 ├── packages/
 │   └── shared/         # @animaku/shared (跨端共享类型、解析器、算法；源码直引零构建)
 ├── docs/               # 架构与开发文档
-├── data/               # Docker 挂载目录 (SQLite 数据库持久化)
+├── data/               # Node/Docker 挂载目录 (不是 D1 或浏览器视频缓存)
+├── animaku-egress-proxy/ # 可选 Vercel 小响应备用出口，尚未拆独立仓库
 └── scripts/            # 工具脚本 (probe-source, bump-version 等)
 ```
 
-- **包管理器**：`pnpm@9.15.0`，Node.js ≥ 20（建议 LTS）。
-- **用户数据边界**：观看历史、播放设置、收藏、Bangumi Token 及插件规则 **100% 存储于客户端本地**（`localStorage` 等），服务端绝不持久化任何用户隐私数据。
+- **包管理器**：`pnpm@9.15.0`，Node.js ≥ 22；可复现构建使用 `.node-version` 指定的版本。
+- **用户数据边界**：本机保留观看历史和设置，网站账号将白名单中的历史、已看集数、搜索记录、设置、规则和源绑定同步到 D1。账号密码保存为哈希，会话令牌保存摘要；Bangumi 收藏由 Bangumi 维护，其登录令牌不主动参与本站云同步。
+- **视频边界**：缓存媒体只保存在用户设备 IndexedDB，下载导出写入用户选择的系统位置；D1 与 JSON 备份不保存视频。
+- **管理员与注册**：管理员由 Worker 的 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 配置并正常登录。注册开关由管理面板保存至 `site_config` 的独立 `account_registration` 记录；环境变量仅在尚未保存时作为兼容默认值。新部署默认关闭注册。
 
 ---
 
@@ -39,6 +44,8 @@ Browser Client (Vite 5173 / Production Web)
 ```
 
 ### 多级缓存策略
+
+以下服务端 SQLite L2 与进程级缓存描述针对 Node 入口；Worker 的实例内存不保证跨实例或长期保留，D1 当前表结构见 `apps/server/migrations/`。
 
 | 模块 / 接口 | 服务端缓存机制 | 客户端缓存机制 | 穿透与失效机制 |
 |---|---|---|---|
@@ -120,7 +127,7 @@ Browser Client (Vite 5173 / Production Web)
 | `LOG_FORMAT` | `pretty` | 服务端访问日志格式（`pretty` 高可读单行 / `json` 结构化单行） |
 
 - **SSRF 防御**：服务端所有发往第三方的请求必须使用 `fetchPublic`，严格拦截私有网段与内网 Host。
-- **权限不可提权**：客户端设置项保存在本地，服务器始终依据环境变量强制执行安全策略。
+- **权限不可提权**：管理员权限由服务端账号会话核对；注册开关由服务端读取 D1 决定，浏览器隐藏按钮不能替代后端鉴权。
 
 ---
 

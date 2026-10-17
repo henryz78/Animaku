@@ -2,6 +2,8 @@
 
 > 本文档汇总了 Animaku 服务端数据库的**配置策略、表结构字典、免安装查询方案、Docker Compose 容器内查询命令与运维排错**。
 
+> **适用范围：Node/Docker 的本地 SQLite。** Cloudflare 账号部署使用 D1，应按 [Worker 指南](cloudflare-worker.md)初始化三份 SQL，并在 Cloudflare D1 控制台查看数据；下面的容器命令和本机数据库文件不能查询 D1。D1 保存账号、会话、云同步、站点设置与统计，视频缓存保存在用户设备。
+
 ---
 
 ## 1. 数据库基础与架构设计

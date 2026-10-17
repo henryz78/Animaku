@@ -2,6 +2,8 @@
 
 > 本文档面向运维部署与站点维护，详细汇总了 **Animaku** 在接入 Cloudflare CDN 时的**标准接入流程、WAF 安全防护规则、边缘缓存规则（Cache Rules）以及源站配套加固**。
 
+> **适用范围：自建 VPS / Node 源站前接 Cloudflare CDN。** Worker + D1 的部署请使用 [Worker 指南](cloudflare-worker.md)，不需要按本文设置 Nginx、源站 IP 或本地 SQLite。带账号的站点应绕过 `/api/account/*` 与 `/api/admin/*` 的共享缓存，不能给它们强制设置公共缓存 TTL；下文源站缓存表也不代表 Worker 已具有相同实现。
+
 ---
 
 ## 1. 概述与核心价值

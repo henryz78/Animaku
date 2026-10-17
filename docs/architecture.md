@@ -2,6 +2,8 @@
 
 本文档深入解析 Animaku 的技术架构、算法模型与关键工程实现细节，面向开发者与架构研究者。
 
+本分支以 Cloudflare Worker + D1 为主要部署方式，账号、会话和云同步数据保存在 D1，媒体缓存在用户设备。下文 Node 进程、SQLite L2、日志合批、SSR 与 CDN 缓存实现不能直接视为 Worker 行为；运行边界与部署步骤见 [Worker 指南](cloudflare-worker.md)，账号和目录说明见 [开发上下文](CONTEXT.md)。
+
 ---
 
 ## 目录

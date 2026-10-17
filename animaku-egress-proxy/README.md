@@ -6,11 +6,17 @@
 
 ## 部署
 
-1. 在 Vercel 导入这个目录：`animaku-egress-proxy`。
+这个代理目前仍位于主仓库的 `animaku-egress-proxy/`，尚未拆分为独立仓库。可通过 Git 连接 Vercel，配置如下；已有 Vercel 项目可以连接仓库并沿用域名与环境变量。
+
+1. 在 Vercel 导入 GitHub 仓库 `henryz78/Animaku`，Root Directory 选择 `animaku-egress-proxy`，生产分支选 `master`。
 2. Framework Preset 选择 `Other`，不需要 Build Command，也不需要 Output Directory。
 3. 添加环境变量 `PROXY_TOKEN`，值设为自己生成的一串随机字符串。
 4. 部署后访问 `https://你的代理域名.vercel.app/api/health` 检查服务。
-5. 把部署后的代理 URL 发给主项目配置。`PROXY_TOKEN` 不要放进 URL，也不要提交到仓库。
+5. 在主 Worker 的运行时设置中，将 `UPSTREAM_PROXY_URL` 设为代理根地址（不带 `/api/health`），Secret `UPSTREAM_PROXY_TOKEN` 设为同一个 `PROXY_TOKEN`。密钥不要放进 URL 或提交到仓库。
+
+完成 Git 连接后，生产分支推送会触发 Vercel 自动部署，无需每次手动上传目录。[Vercel Git 部署说明](https://vercel.com/docs/git)
+
+以后拆成独立仓库时，上传此目录内的文件即可，Root Directory 改为新仓库根目录；主站与代理应各自连接对应仓库。拆分和连接需要另行完成，本文不表示现有线上项目已经启用 Git 自动部署。
 
 ## 接口
 
