@@ -4,6 +4,9 @@ dist
 *.log
 .env
 .env.local
+.dev.vars
+.dev.vars.*
+.wrangler/
 .DS_Store
 *.tsbuildinfo
 apps/web/dist

@@ -11,6 +11,9 @@
     "build": "pnpm -r build",
     "build:web": "pnpm --filter @animaku/web build",
     "build:server": "pnpm --filter @animaku/server build",
+    "build:cloudflare": "pnpm typecheck && pnpm build:web",
+    "check:cloudflare": "wrangler deploy --config wrangler.jsonc --keep-vars --dry-run",
+    "deploy:cloudflare": "wrangler deploy --config wrangler.jsonc --keep-vars",
     "start": "pnpm --filter @animaku/server start",
     "start:prod": "pnpm build && pnpm start",
     "lint": "pnpm -r lint",
@@ -24,5 +27,8 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
 }
