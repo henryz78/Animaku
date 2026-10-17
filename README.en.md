@@ -58,13 +58,13 @@ This is a fork of [uerax/Animaku](https://github.com/uerax/Animaku), primarily d
 
 ## Deployment
 
-Follow the [Cloudflare deployment guide](docs/cloudflare-worker.md) to create D1 and a Worker, bind the database as `DB` in the dashboard, configure runtime variables, and add deployment credentials to GitHub Actions. The Worker serves both the frontend and API; a direct Cloudflare-to-GitHub connection is not required.
+Follow the [Cloudflare deployment guide](docs/cloudflare-worker.md) to add GitHub Actions deployment credentials and run the workflow. It creates or reuses D1, applies migrations, binds the database, and deploys the Worker automatically. After the first deployment, configure administrator credentials and other runtime variables in the Cloudflare dashboard. A direct Cloudflare-to-GitHub connection is not required.
 
 | Workflow | Trigger | GitHub repository secrets |
 | --- | --- | --- |
 | [Deploy Cloudflare Worker](.github/workflows/cloudflare-deploy.yml) | Push to `master`, or manual dispatch | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
 
-The workflow updates the existing `animaku` Worker; set the repository variable `CLOUDFLARE_WORKER_NAME` to use another existing Worker. It reads the actual `DB` binding, applies pending D1 migrations, and publishes code while preserving dashboard-managed runtime variables, secrets, and D1 / R2 / KV bindings. The API token needs Workers Scripts Edit and D1 Edit permissions for the target account.
+The workflow creates or updates the `animaku` Worker, using a database also named `animaku` by default. Optional repository variables `CLOUDFLARE_WORKER_NAME` / `CLOUDFLARE_D1_NAME` customize those names. Later releases use the Worker's actual `DB` binding and apply pending migrations while preserving dashboard-managed runtime variables, secrets, and D1 / R2 / KV bindings. The API token needs Workers Scripts Edit and D1 Edit permissions for the target account.
 
 Registration is closed on a fresh deployment. Configure `ADMIN_USERNAME` and `ADMIN_PASSWORD`, sign in directly as the administrator, then enable registration under **Settings → Site administration → Cloud account management**. `ACCOUNT_REGISTRATION_ENABLED` is not required.
 

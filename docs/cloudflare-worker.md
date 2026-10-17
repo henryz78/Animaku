@@ -2,29 +2,43 @@
 
 当前入口是 `apps/server/src/worker.ts`，Worker 同时托管 API 和 `apps/web/dist` 静态资源。D1 保存用户账号、会话、云端同步数据、播放统计、去重键和站点配置，不需要额外部署 Node 服务。
 
-## 1. 从零创建 D1
+## 1. 配置 GitHub 部署凭据
 
-在 Cloudflare 控制台进入 **存储和数据库 → D1 SQL 数据库 → 创建数据库**，名称可以使用 `animaku`。数据库名称可以自定，后面绑定到 Worker 的变量名必须是 `DB`。
+GitHub Actions 可以自动创建 Worker 和 D1、初始化数据表并绑定，不用先去 Cloudflare 手动创建空壳服务。主站使用本仓库的 [GitHub Actions 工作流](../.github/workflows/cloudflare-deploy.yml)，无需 Cloudflare 账号直接连接 GitHub；备用出口仍使用 Vercel，和主站工作流独立。
 
-使用下文 GitHub Actions 自动部署时，首次发布会自动按顺序执行以下迁移，不需要手动粘贴 SQL。若只使用本地手动部署，可以在数据库的 **Console / 控制台** 按顺序执行文件的完整内容：
+在 Cloudflare 创建一个限定到目标账号的 API Token，可使用 **Edit Cloudflare Workers** 模板并补上 **Account → D1 → Edit** 权限。至少需要目标账号的 **Workers Scripts → Edit** 与 **D1 → Edit**，分别用于创建/发布 Worker 和创建/迁移 D1。使用 `workers.dev` 且不在配置中管理域名路由时，无需为此额外授权其他账号或区域。[Cloudflare Actions 凭据说明](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
+
+进入 GitHub 仓库 **Settings → Secrets and variables → Actions → Secrets → New repository secret**，新增：
+
+| Repository secret | 值 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | 上述 API Token；不要提交到代码或发到构建日志 |
+| `CLOUDFLARE_ACCOUNT_ID` | 目标 Cloudflare 账号的 Account ID，32 位十六进制字符；不是数据库 ID 或 Zone ID |
+
+默认 Worker 和数据库都叫 `animaku`。若需改名，在同一页面的 **Variables → New repository variable** 设置 `CLOUDFLARE_WORKER_NAME`；数据库默认跟随 Worker 名称，也可单独设置 `CLOUDFLARE_D1_NAME`。这两个名称都不填也能部署。数据库 ID 不用在 GitHub 再填一份。
+
+## 2. 运行首次部署
+
+打开 GitHub **Actions → Deploy Cloudflare Worker → Run workflow**，选择 `master` 运行首次发布。流程会：
+
+1. 安装锁定依赖、运行部署准备测试、检查三个工作区的类型、构建前端并检查 Worker 打包。
+2. 若 Worker 已有有效的 `DB` 绑定，直接使用该数据库，忽略默认数据库名；若 Worker 或 `DB` 尚不存在，则查找名称完全匹配的 D1，没有才创建。
+3. 自动执行尚未应用的 SQL 迁移。
+4. 发布网页与 API；缺少 Worker 时创建它，缺少 `DB` 绑定时一并添加，`ASSETS` 自动发布。
+
+同一名称的资源会被复用，首次执行中断后重跑也会复用已创建的 D1；不会因为每次推送就多建一个服务或数据库。已有 `DB` 如果类型错误或内容异常，流程会报错停止，不擅自替换。没有 `DB` 绑定而要使用已有不同名称的数据库时，可以预先设置 `CLOUDFLARE_D1_NAME`，无需手动绑定。[D1 创建 API](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/create/)
+
+迁移文件按以下顺序执行，不需要手动粘贴 SQL：
 
 1. [0001_cloudflare.sql](../apps/server/migrations/0001_cloudflare.sql)：播放统计、去重和站点配置。
 2. [0002_bangumi_data_mapping.sql](../apps/server/migrations/0002_bangumi_data_mapping.sql)：跨站条目映射。
 3. [0003_account_system.sql](../apps/server/migrations/0003_account_system.sql)：账号、会话和云同步。
 
-迁移完成后应能看到 `anime_play_counts`、`stats_view_dedup`、`site_config`、`bangumi_data_mapping`、`account_users`、`account_sessions`、`account_data` 七张业务表。Actions 还会维护 `d1_migrations` 迁移记录表。现有数据库无需因注册开关更新而重新初始化；数据库里的账号和同步数据也不属于视频缓存。
+完成后可见七张业务表：`anime_play_counts`、`stats_view_dedup`、`site_config`、`bangumi_data_mapping`、`account_users`、`account_sessions`、`account_data`，以及 `d1_migrations` 迁移记录表。数据库里的账号和同步数据不属于视频缓存。
 
-## 2. 创建 Worker 并绑定数据库
+## 3. 首次部署后，在网页端设置运行时变量
 
-进入 **Workers & Pages → 创建应用 → Start with Hello World → Deploy**，先创建名为 `animaku` 的空壳 Worker，再进行绑定和变量设置。使用其他名字时，在下文 GitHub Actions 的仓库变量中设置 `CLOUDFLARE_WORKER_NAME`，无需修改代码。同一账号下旧的同名 Worker 会占用该名称。
-
-进入新 Worker 的 **Bindings / 绑定 → 添加绑定 → D1 数据库**，变量名填大写 `DB`，选择上一步创建的数据库并保存。`ASSETS` 会随正式代码发布，不需要手动绑定。
-
-先创建空壳并保存绑定，是因为工作流只更新已有 Worker，读取其真实 `DB` 绑定来执行迁移，不会另外新建 Worker 或数据库。[Cloudflare 创建与绑定说明](https://developers.cloudflare.com/d1/get-started/)
-
-## 3. 在网页端设置运行时变量
-
-进入 Worker 的 **Settings → Variables & Secrets**，保存以下设置。密钥不需要写入 GitHub，也不要放入前端构建变量。
+首次部署成功后，在 Cloudflare 找到新 Worker，进入 **Settings → Variables & Secrets**，保存并部署以下设置，然后才能使用配置好的管理员账号登录。密钥不需要写入 GitHub，也不要放入前端构建变量。已有设置不用重填，后续自动发布会保留。
 
 | 名称 | 类型 | 内容 |
 | --- | --- | --- |
@@ -40,32 +54,19 @@
 
 其他可选运行时变量包括 `BANGUMI_API`、`BANGUMI_NEXT_API`、`BANGUMI_USER_AGENT`、`CORS_ORIGINS`。Worker 的 Bangumi API 覆盖值应填写完整 HTTPS 根地址，通常留空即可，不要照搬 Node `.env` 中的 `mirror` / `official` 预设。
 
-## 4. GitHub 推送自动部署
+## 4. 后续更新与网页配置保留
 
-主站使用本仓库的 [GitHub Actions 工作流](../.github/workflows/cloudflare-deploy.yml)，无需 Cloudflare 账号直接连接 GitHub。备用出口仍使用 Vercel，和主站工作流独立。仓库只保留入口、静态资源和兼容模式等技术配置，运行时变量和数据库绑定由 Cloudflare 网页端管理。
+以后每次推送 `master` 都会自动运行；其他分支和 PR 不发布到生产。同一时间只执行一次生产发布，不会因新推送中断正在进行的迁移。构建、资源准备或迁移失败时不会继续发布代码。若之前开过 Cloudflare Workers Builds 自动构建，请关闭其中的 Git 自动部署，避免两套流程重复发布。
 
-在 Cloudflare 创建一个限定到目标账号的 API Token，可使用 **Edit Cloudflare Workers** 模板并补上 **Account → D1 → Edit** 权限。至少需要目标账号的 **Workers Scripts → Edit** 与 **D1 → Edit**，分别用于发布/读取绑定和执行迁移。使用 `workers.dev` 且不在配置中管理域名路由时，无需为此额外授权其他账号或区域。[Cloudflare Actions 凭据说明](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
-
-进入 GitHub 仓库 **Settings → Secrets and variables → Actions → Secrets → New repository secret**，新增：
-
-| Repository secret | 值 |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | 上述 API Token；不要提交到代码或发到构建日志 |
-| `CLOUDFLARE_ACCOUNT_ID` | 目标 Cloudflare 账号的 Account ID，32 位十六进制字符；不是数据库 ID 或 Zone ID |
-
-默认部署到现有的 `animaku` Worker。若名字不同，进入同一页面的 **Variables → New repository variable**，设置 `CLOUDFLARE_WORKER_NAME` 为实际名称。数据库 ID 不用在 GitHub 再填一份：工作流会通过只读 API 查询该 Worker 当前的 `DB` 绑定。
-
-保存后打开 GitHub **Actions → Deploy Cloudflare Worker → Run workflow**，选择 `master` 运行首次发布。以后每次推送 `master` 都会自动运行；其他分支和 PR 不发布到生产。同一时间只执行一次生产发布，不会因新推送中断正在进行的迁移。若之前开过 Cloudflare Workers Builds 自动构建，请关闭其中的 Git 自动部署，避免两套流程重复发布。
-
-工作流依次安装锁定依赖、运行部署准备测试、检查三个工作区的类型、构建前端、检查 Worker 打包、确认已有 Worker 和 `DB` 绑定、执行尚未应用的 D1 迁移，最后发布代码。构建、绑定检查或迁移失败时不会继续发布。Node 版本由 `.node-version` 固定为 `24.14.1`，pnpm 为 `9.15.0`，Wrangler 使用仓库中锁定的版本。
+Node 版本由 `.node-version` 固定为 `24.14.1`，pnpm 为 `9.15.0`，Wrangler 使用仓库中锁定的版本。仓库只保留入口、静态资源和兼容模式等技术配置，运行时变量和数据库绑定由 Cloudflare 网页端管理。
 
 **运行时变量与部署凭据分开：** `ADMIN_PASSWORD`、`MEDIA_SECRET`、`UPSTREAM_PROXY_TOKEN`、`TMDB_API_KEY` 等继续放在 Worker 的 **Settings → Variables & Secrets**，不要复制到 GitHub 或前端构建变量。GitHub 中只需要上面的部署凭据。项目目前的前端构建无需另填变量；以后若需 `VITE_SITE_URL` 等公开构建选项，应显式加到工作流的构建步骤，不能当作运行时密钥。
 
 `wrangler.jsonc` 不声明 `vars`、D1 数据库 ID、R2 桶或 KV 命名空间。`keep_vars` 配合 Cloudflare 上传 API 的 `keep_bindings` 保留网页端的普通变量、密钥以及 D1 / R2 / KV 绑定，后续在网页修改它们不会被代码中的旧值覆盖。Wrangler 暂无对应的正式顶层绑定保留选项，因此通过 `unsafe.metadata` 透传已公开的 API 参数，并固定 Wrangler 版本；不要只删掉绑定声明而同时删掉这段保留配置。[变量说明](https://developers.cloudflare.com/workers/wrangler/commands/workers/#deploy)、[上传 API 的 keep_bindings](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/create/)
 
-在 Worker 的 **Bindings** 中确认有 D1 绑定：变量名 `DB`，选择现有的 `animaku` 数据库。`ASSETS` 是随代码发布的前端静态资源，由技术配置维护，不需要手动绑定。当前保留清单覆盖普通变量、密钥、D1、R2、KV；以后新增其他类型的绑定时需先把该类型加入清单，不能假定所有资源都会自动保留。
+工作流会自动添加缺少的 `DB` 绑定。此后若在网页改绑到另一个有效的 D1，下一次发布会读取新绑定并使用它，不会强制切回默认库；请自行确认换库是否符合预期，新库也会应用本项目迁移。`ASSETS` 是随代码发布的前端静态资源，由技术配置维护，不需要手动绑定。当前保留清单覆盖普通变量、密钥、D1、R2、KV；以后新增其他类型的绑定时需先把该类型加入清单，不能假定所有资源都会自动保留。
 
-每次更新的是同一个 Worker，Cloudflare 可能增加一条版本/部署历史，不会每次创建一个新服务或数据库。D1 迁移使用临时配置 `.tmp-cloudflare-d1.json`，只含实际 `DB` 的数据库 ID 和迁移目录，完成后删除；发布 Worker 仍只使用仓库中的 `wrangler.jsonc`，不会把临时配置的绑定或任何运行时变量写回网页设置。
+每次更新的是同一个 Worker，Cloudflare 可能增加一条版本/部署历史，不会每次创建一个新服务或数据库。D1 迁移使用临时配置 `.tmp-cloudflare-d1.json`；发布用的 `.tmp-cloudflare-deploy.json` 由仓库技术配置生成，只有首次建立 `DB` 绑定时才额外包含数据库 ID。以后已有绑定时会省略 D1 声明，让 `keep_bindings` 保留网页设置。这两个文件都不会提交到仓库，任务结束后删除；不会把管理员密码等运行时值复制进临时配置。
 
 首次发布成功后检查：
 
