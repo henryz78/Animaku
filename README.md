@@ -58,13 +58,13 @@
 
 ## 部署与运行
 
-按 [Cloudflare Worker 部署指南](docs/cloudflare-worker.md) 从零创建 D1、初始化数据表、创建 Worker 并连接 GitHub。主站同时提供网页和 API，不需要额外的 Node 服务。
+按 [Cloudflare Worker 部署指南](docs/cloudflare-worker.md) 创建 D1 和 Worker，在网页端绑定 `DB` 并设置运行时变量，再配置 GitHub Actions 的部署凭据。主站同时提供网页和 API，不需要额外的 Node 服务，也不需要 Cloudflare 直接连接 GitHub。
 
-| GitHub 仓库 | 生产分支 | 根目录 | 构建命令 | 部署命令 |
-| --- | --- | --- | --- | --- |
-| `henryz78/Animaku` | `master` | `/` | `pnpm build:cloudflare` | `pnpm deploy:cloudflare` |
+| 工作流 | 自动触发 | GitHub Repository Secrets |
+| --- | --- | --- |
+| [Deploy Cloudflare Worker](.github/workflows/cloudflare-deploy.yml) | 推送 `master`，或手动运行 | `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` |
 
-在 Cloudflare 构建变量中设置 `PNPM_VERSION=9.15.0`。管理员账号、密钥和 `DB` 数据库绑定在 Worker 网页端设置；代码仅保留入口与静态资源等技术配置。
+默认更新已有的 `animaku` Worker；自定名称可通过 GitHub 仓库变量 `CLOUDFLARE_WORKER_NAME` 设置。工作流自动读取实际 `DB` 绑定、应用待执行的 D1 迁移并发布代码，保留网页端的运行时变量、密钥和 D1 / R2 / KV 绑定。API Token 需要目标账号的 Workers Scripts 编辑和 D1 编辑权限。
 
 首次部署默认关闭注册。配置 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 后直接登录管理员，在 **设置 → 站点运维与管理 → 云端账号管理** 中开启注册，无需设置 `ACCOUNT_REGISTRATION_ENABLED`。
 
